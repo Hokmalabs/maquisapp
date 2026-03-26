@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hors ligne · MaquisApp</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      min-height:100vh;
+      background:#FFF8F3;
+      font-family:system-ui,sans-serif;
+      display:flex;align-items:center;justify-content:center;
+      padding:24px;
+    }
+    .card{
+      background:#fff;border-radius:20px;padding:32px 24px;
+      text-align:center;max-width:320px;width:100%;
+      box-shadow:0 4px 24px rgba(26,26,46,0.08);
+      border:1px solid #F0E8E0;
+    }
+    .emoji{font-size:56px;margin-bottom:16px}
+    h1{font-size:20px;font-weight:800;color:#1A1A2E;margin-bottom:8px}
+    p{font-size:14px;color:#8A7E75;line-height:1.6;margin-bottom:24px}
+    button{
+      width:100%;padding:13px;border-radius:12px;border:none;
+      background:#FF6B35;color:#fff;font-size:15px;font-weight:700;
+      cursor:pointer;font-family:system-ui,sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="emoji">📡</div>
+    <h1>Pas de connexion</h1>
+    <p>Vérifiez votre connexion internet et réessayez. Votre commande en cours est sauvegardée.</p>
+    <button onclick="window.location.reload()">Réessayer</button>
+  </div>
+</body>
+</html>
