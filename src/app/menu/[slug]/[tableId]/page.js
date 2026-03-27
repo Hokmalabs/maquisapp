@@ -1,645 +1,669 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
-import { supabase } from '../../../lib/supabase';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createClient } from '../../../lib/supabase';
 
-// ─── Design tokens ────────────────────────────────────────────────────
+const supabase = createClient();
+
+// ─── PALETTE ────────────────────────────────────────────────────────────────
 const C = {
-  bg:       '#FFF8F3',
-  header:   '#1A1A2E',
-  orange:   '#FF6B35',
-  orangeL:  '#FFF0EA',
-  white:    '#FFFFFF',
-  border:   '#F0E8E0',
-  textDark: '#1A1A2E',
-  textGray: '#8A7E75',
-  textLight:'#B5ADA6',
-  green:    '#22C55E',
-  greenL:   '#F0FDF4',
-  red:      '#EF4444',
-  redL:     '#FEF2F2',
-  yellow:   '#F59E0B',
-  yellowL:  '#FFFBEB',
-  shadow:   'rgba(26,26,46,0.08)',
+  bg: '#F5F5F5',
+  white: '#FFFFFF',
+  primary: '#FF6B35',
+  primaryDark: '#E85520',
+  primaryLight: '#FFF0EB',
+  dark: '#1A1A2E',
+  gray: '#8A8A9A',
+  grayLight: '#F0F0F5',
+  border: '#E8E8F0',
+  green: '#00C851',
+  yellow: '#FFB800',
+  red: '#FF3B30',
+  shadow: 'rgba(0,0,0,0.08)',
+  shadowMd: 'rgba(0,0,0,0.14)',
 };
 
-const S = {
-  card: { background: C.white, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: `0 2px 12px ${C.shadow}` },
-  btn: (v='primary') => ({
-    display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6,
-    padding:'11px 20px', borderRadius:12, fontSize:14, fontWeight:700,
-    cursor:'pointer', border:'none', transition:'all .18s', fontFamily:'system-ui, sans-serif',
-    ...(v==='primary' ? { background:C.orange, color:C.white }
-      : v==='ghost'   ? { background:'transparent', color:C.textGray, border:`1.5px solid ${C.border}` }
-      : v==='green'   ? { background:C.green, color:C.white }
-      :                 { background:C.orangeL, color:C.orange }),
-  }),
+// ─── STATUTS COMMANDE ────────────────────────────────────────────────────────
+const STATUT_CONFIG = {
+  en_attente:    { label: 'En attente',     color: C.yellow,  icon: '⏳', bg: '#FFF8E1' },
+  valide:        { label: 'Validée',        color: C.green,   icon: '✅', bg: '#E8F5E9' },
+  en_preparation:{ label: 'En préparation', color: C.primary, icon: '👨‍🍳', bg: '#FFF0EB' },
+  presque_pret:  { label: 'Presque prêt !', color: C.primaryDark, icon: '🔔', bg: '#FFE8E0' },
+  servi:         { label: 'Servi',          color: C.green,   icon: '🍽️', bg: '#E8F5E9' },
+  cloture:       { label: 'Clôturée',       color: C.gray,    icon: '✔️', bg: '#F5F5F5' },
+  annule:        { label: 'Annulée',        color: C.red,     icon: '❌', bg: '#FFEBEE' },
 };
 
-const Icon = {
-  cart:  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>,
-  bell:  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
-  minus: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>,
-  plus:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
-  close: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
-  check: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>,
-  trash: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>,
-  image: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
-  phone: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l.91-.91a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 17v-.08z"/></svg>,
-  info:  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>,
-  wallet:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8l-2 4h12z"/><circle cx="17" cy="13" r="1" fill="currentColor"/></svg>,
-};
+export default function MenuPage({ params }) {
+  const { slug, tableId } = params;
 
-// ─── Toast ────────────────────────────────────────────────────────────
-function Toast({ msg, type, onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t); }, []);
-  const bg = type === 'error' ? C.red : type === 'warn' ? C.yellow : C.green;
+  // ─── STATE ────────────────────────────────────────────────────────────────
+  const [restaurant, setRestaurant]   = useState(null);
+  const [categories, setCategories]   = useState([]);
+  const [plats, setPlats]             = useState([]);
+  const [table, setTable]             = useState(null);
+  const [panier, setPanier]           = useState([]);
+  const [commande, setCommande]       = useState(null);
+  const [commandeItems, setCommandeItems] = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [activeCat, setActiveCat]     = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [view, setView]               = useState('menu'); // menu | panier | commande
+  const [showPanierModal, setShowPanierModal] = useState(false);
+  const [note, setNote]               = useState('');
+  const [showNoteFor, setShowNoteFor] = useState(null);
+  const [commandeEnvoyee, setCommandeEnvoyee] = useState(false);
+  const [appelEnvoye, setAppelEnvoye] = useState(false);
+  const [modePaiement, setModePaiement] = useState('');
+  const [showPaiementModal, setShowPaiementModal] = useState(false);
+  const [platDetail, setPlatDetail]   = useState(null);
+  const catRefs = useRef({});
+  const scrollRef = useRef(null);
+
+  // ─── CHARGEMENT ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    loadData();
+  }, [slug, tableId]);
+
+  async function loadData() {
+    setLoading(true);
+    // Restaurant
+    const { data: resto } = await supabase
+      .from('restaurants')
+      .select('*')
+      .eq('slug', slug)
+      .single();
+    if (!resto) { setLoading(false); return; }
+    setRestaurant(resto);
+
+    // Table
+    const { data: tbl } = await supabase
+      .from('tables')
+      .select('*')
+      .eq('id', tableId)
+      .single();
+    setTable(tbl);
+
+    // Catégories
+    const { data: cats } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('restaurant_id', resto.id)
+      .order('ordre');
+    setCategories(cats || []);
+    if (cats?.length) setActiveCat(cats[0].id);
+
+    // Plats
+    const { data: pls } = await supabase
+      .from('plats')
+      .select('*')
+      .eq('restaurant_id', resto.id)
+      .eq('disponible', true)
+      .order('ordre');
+    setPlats(pls || []);
+
+    // Commande active sur cette table
+    const { data: cmd } = await supabase
+      .from('commandes')
+      .select('*')
+      .eq('table_id', tableId)
+      .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    if (cmd) {
+      setCommande(cmd);
+      loadCommandeItems(cmd.id);
+    }
+
+    setLoading(false);
+  }
+
+  async function loadCommandeItems(cmdId) {
+    const { data } = await supabase
+      .from('commande_items')
+      .select('*')
+      .eq('commande_id', cmdId);
+    setCommandeItems(data || []);
+  }
+
+  // ─── REALTIME ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!restaurant) return;
+    const ch = supabase.channel(`menu-${tableId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'commandes', filter: `table_id=eq.${tableId}` }, (payload) => {
+        const s = payload.new?.statut;
+        if (['en_attente','valide','en_preparation','presque_pret','servi'].includes(s)) {
+          setCommande(payload.new);
+          loadCommandeItems(payload.new.id);
+        } else if (['cloture','annule'].includes(s)) {
+          setCommande(null);
+          setCommandeItems([]);
+          setCommandeEnvoyee(false);
+        }
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [restaurant, tableId]);
+
+  // ─── PANIER ───────────────────────────────────────────────────────────────
+  const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0);
+  const countPanier = panier.reduce((s, i) => s + i.quantite, 0);
+
+  function ajouterAuPanier(plat) {
+    setPanier(prev => {
+      const ex = prev.find(i => i.plat_id === plat.id);
+      if (ex) return prev.map(i => i.plat_id === plat.id ? { ...i, quantite: i.quantite + 1 } : i);
+      return [...prev, { plat_id: plat.id, nom: plat.nom, prix: plat.prix, quantite: 1, note: '', image_url: plat.image_url }];
+    });
+  }
+
+  function retirerDuPanier(platId) {
+    setPanier(prev => {
+      const ex = prev.find(i => i.plat_id === platId);
+      if (!ex) return prev;
+      if (ex.quantite === 1) return prev.filter(i => i.plat_id !== platId);
+      return prev.map(i => i.plat_id === platId ? { ...i, quantite: i.quantite - 1 } : i);
+    });
+  }
+
+  function quantiteDans(platId) {
+    return panier.find(i => i.plat_id === platId)?.quantite || 0;
+  }
+
+  // ─── COMMANDER ────────────────────────────────────────────────────────────
+  async function envoyerCommande() {
+    if (!panier.length || !restaurant || !table) return;
+    const total = totalPanier;
+    const { data: cmd, error } = await supabase
+      .from('commandes')
+      .insert({ restaurant_id: restaurant.id, table_id: table.id, statut: 'en_attente', total, paye: false })
+      .select()
+      .single();
+    if (error || !cmd) return;
+    await supabase.from('commande_items').insert(
+      panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, quantite: i.quantite, note: i.note || '' }))
+    );
+    setCommande(cmd);
+    loadCommandeItems(cmd.id);
+    setPanier([]);
+    setCommandeEnvoyee(true);
+    setView('commande');
+  }
+
+  // ─── APPEL SERVEUR ────────────────────────────────────────────────────────
+  async function appelServeur() {
+    if (!restaurant || !table || appelEnvoye) return;
+    await supabase.from('appels_serveur').insert({ restaurant_id: restaurant.id, table_id: table.id, traite: false });
+    setAppelEnvoye(true);
+    setTimeout(() => setAppelEnvoye(false), 30000);
+  }
+
+  // ─── PAIEMENT ─────────────────────────────────────────────────────────────
+  async function demanderPaiement() {
+    if (!commande || !modePaiement) return;
+    await supabase.from('commandes').update({ mode_paiement: modePaiement }).eq('id', commande.id);
+    setShowPaiementModal(false);
+  }
+
+  // ─── FILTRE PLATS ─────────────────────────────────────────────────────────
+  const platsFiltres = searchQuery
+    ? plats.filter(p => p.nom.toLowerCase().includes(searchQuery.toLowerCase()))
+    : activeCat ? plats.filter(p => p.categorie_id === activeCat) : plats;
+
+  const platsByCat = categories.map(cat => ({
+    ...cat,
+    plats: plats.filter(p => p.categorie_id === cat.id)
+  }));
+
+  // ─── SCROLL CAT ──────────────────────────────────────────────────────────
+  function scrollToCategory(catId) {
+    setActiveCat(catId);
+    catRefs.current[catId]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  if (loading) return <LoadingScreen />;
+  if (!restaurant) return <ErrorScreen />;
+
+  // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
-    <div style={{ position:'fixed', top:20, left:'50%', transform:'translateX(-50%)', zIndex:999,
-      background:bg, color:C.white, padding:'12px 22px', borderRadius:12, fontSize:14, fontWeight:700,
-      boxShadow:'0 4px 24px rgba(0,0,0,0.18)', whiteSpace:'nowrap', animation:'slideDown .25s' }}>
-      {msg}
-    </div>
-  );
-}
+    <div style={{ background: C.bg, minHeight: '100vh', maxWidth: 430, margin: '0 auto', fontFamily: "'DM Sans', system-ui, sans-serif", position: 'relative', overflow: 'hidden' }}>
 
-// ─── Qty stepper ──────────────────────────────────────────────────────
-function Stepper({ value, onChange, min = 0 }) {
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:0, background:C.bg, borderRadius:10, overflow:'hidden', border:`1px solid ${C.border}` }}>
-      <button onClick={() => value > min && onChange(value - 1)}
-        style={{ width:34, height:34, border:'none', background:'transparent', cursor:'pointer', color:C.textGray, display:'flex', alignItems:'center', justifyContent:'center' }}>
-        {Icon.minus}
-      </button>
-      <span style={{ width:28, textAlign:'center', fontSize:15, fontWeight:700, color:C.textDark }}>{value}</span>
-      <button onClick={() => onChange(value + 1)}
-        style={{ width:34, height:34, border:'none', background:C.orange, cursor:'pointer', color:C.white, display:'flex', alignItems:'center', justifyContent:'center' }}>
-        {Icon.plus}
-      </button>
-    </div>
-  );
-}
+      {/* FONT */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { display: none; }
+        body { background: ${C.bg}; }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.7;transform:scale(1.05)} }
+        @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes bounce { 0%,100%{transform:scale(1)} 40%{transform:scale(1.25)} 70%{transform:scale(0.9)} }
+        @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+        .plat-card:active { transform: scale(0.98); }
+        .cat-chip:active { transform: scale(0.95); }
+        .btn-primary:active { transform: scale(0.97); opacity:.9; }
+      `}</style>
 
-// ─── Plat detail modal ────────────────────────────────────────────────
-function PlatModal({ plat, onClose, onAdd }) {
-  const [qty, setQty] = useState(1);
-  const [note, setNote] = useState('');
-  if (!plat) return null;
-  return (
-    <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(26,26,46,0.6)', backdropFilter:'blur(6px)',
-      display:'flex', alignItems:'flex-end', justifyContent:'center' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background:C.white, borderRadius:'24px 24px 0 0', width:'100%', maxWidth:480, maxHeight:'88vh', overflowY:'auto' }}>
-        {/* Image */}
-        <div style={{ width:'100%', height:220, background:C.bg, position:'relative', overflow:'hidden' }}>
-          {plat.image_url
-            ? <img src={plat.image_url} alt={plat.nom} style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
-            : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:C.textLight }}>{Icon.image}</div>}
-          <button onClick={onClose} style={{ position:'absolute', top:14, right:14, width:36, height:36, borderRadius:'50%',
-            background:'rgba(255,255,255,0.9)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:C.textDark }}>
-            {Icon.close}
-          </button>
-          {!plat.disponible && (
-            <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <span style={{ color:C.white, fontWeight:700, fontSize:16, background:'rgba(0,0,0,0.6)', padding:'8px 20px', borderRadius:999 }}>Indisponible</span>
-            </div>
-          )}
-        </div>
-
-        <div style={{ padding:'20px 20px 32px', display:'flex', flexDirection:'column', gap:14 }}>
-          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12 }}>
-            <h2 style={{ margin:0, fontSize:20, fontWeight:800, color:C.textDark, flex:1 }}>{plat.nom}</h2>
-            <span style={{ fontSize:20, fontWeight:800, color:C.orange, flexShrink:0 }}>
-              {Number(plat.prix).toLocaleString('fr-CI')} F
-            </span>
-          </div>
-          {plat.description && <p style={{ margin:0, fontSize:14, color:C.textGray, lineHeight:1.6 }}>{plat.description}</p>}
-
-          {/* Note */}
-          <div>
-            <label style={{ fontSize:12, fontWeight:600, color:C.textGray, display:'block', marginBottom:6 }}>Note pour la cuisine (optionnel)</label>
-            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ex: sans piment, bien cuit…"
-              style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:`1.5px solid ${C.border}`,
-                fontSize:14, color:C.textDark, background:C.white, outline:'none', resize:'none', minHeight:72,
-                fontFamily:'system-ui, sans-serif', boxSizing:'border-box' }}/>
-          </div>
-
-          {plat.disponible && (
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 0 0', borderTop:`1px solid ${C.border}` }}>
-              <Stepper value={qty} onChange={setQty} min={1}/>
-              <button onClick={() => { onAdd(plat, qty, note); onClose(); }}
-                style={{ ...S.btn('primary'), padding:'12px 24px', fontSize:15 }}>
-                Ajouter · {(plat.prix * qty).toLocaleString('fr-CI')} F
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Panier modal ─────────────────────────────────────────────────────
-function PanierModal({ items, onClose, onCommander, onUpdateQty, onRemove, commandeEnCours }) {
-  const total = items.reduce((s, i) => s + i.prix * i.qty, 0);
-  const [note, setNote] = useState('');
-
-  return (
-    <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(26,26,46,0.6)', backdropFilter:'blur(6px)',
-      display:'flex', alignItems:'flex-end', justifyContent:'center' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background:C.white, borderRadius:'24px 24px 0 0', width:'100%', maxWidth:480, maxHeight:'90vh', overflowY:'auto' }}>
-        <div style={{ display:'flex', justifyContent:'center', padding:'12px 0 4px' }}>
-          <div style={{ width:40, height:4, borderRadius:2, background:C.border }}/>
-        </div>
-
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 20px 14px', borderBottom:`1px solid ${C.border}` }}>
-          <h3 style={{ margin:0, fontSize:18, fontWeight:800, color:C.textDark }}>Mon panier</h3>
-          <button onClick={onClose} style={{ background:'transparent', border:'none', cursor:'pointer', color:C.textGray }}>{Icon.close}</button>
-        </div>
-
-        <div style={{ padding:'14px 20px', display:'flex', flexDirection:'column', gap:10 }}>
-          {items.length === 0 ? (
-            <div style={{ textAlign:'center', padding:'32px 0', color:C.textGray }}>
-              <div style={{ fontSize:40, marginBottom:12 }}>🛒</div>
-              <div style={{ fontSize:14 }}>Votre panier est vide</div>
-            </div>
-          ) : (
-            <>
-              {items.map(item => (
-                <div key={item.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 0', borderBottom:`1px solid ${C.border}` }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:14, fontWeight:600, color:C.textDark }}>{item.nom}</div>
-                    {item.note && <div style={{ fontSize:12, color:C.textGray, fontStyle:'italic' }}>{item.note}</div>}
-                    <div style={{ fontSize:13, fontWeight:700, color:C.orange, marginTop:2 }}>
-                      {(item.prix * item.qty).toLocaleString('fr-CI')} F
-                    </div>
-                  </div>
-                  <Stepper value={item.qty} onChange={v => v === 0 ? onRemove(item.id) : onUpdateQty(item.id, v)} min={0}/>
-                </div>
-              ))}
-
-              {/* Total */}
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 0 0' }}>
-                <span style={{ fontSize:16, fontWeight:700, color:C.textDark }}>Total</span>
-                <span style={{ fontSize:22, fontWeight:800, color:C.orange }}>{total.toLocaleString('fr-CI')} FCFA</span>
+      {/* ── HEADER ─────────────────────────────────────────────────────── */}
+      <div style={{ background: C.white, padding: '52px 20px 16px', position: 'sticky', top: 0, zIndex: 100, boxShadow: `0 2px 12px ${C.shadow}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {restaurant.logo_url
+              ? <img src={restaurant.logo_url} alt="" style={{ width: 40, height: 40, borderRadius: 12, objectFit: 'cover' }} />
+              : <div style={{ width: 40, height: 40, borderRadius: 12, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🍽️</div>
+            }
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.dark, lineHeight: 1.2 }}>{restaurant.nom}</div>
+              <div style={{ fontSize: 12, color: C.gray, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, display: 'inline-block' }}></span>
+                Table {table?.numero} • {table?.zone || 'Salle'}
               </div>
+            </div>
+          </div>
+          {/* Bouton appel serveur */}
+          <button onClick={appelServeur} style={{ background: appelEnvoye ? C.green : C.primaryLight, border: 'none', borderRadius: 14, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', transition: 'all .3s' }}>
+            <span style={{ fontSize: 18 }}>{appelEnvoye ? '✅' : '🔔'}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: appelEnvoye ? C.white : C.primary }}>{appelEnvoye ? 'Appelé' : 'Serveur'}</span>
+          </button>
+        </div>
 
-              {/* Ajout items si commande en cours */}
-              {commandeEnCours && (
-                <div style={{ background:C.yellowL, borderRadius:10, padding:'10px 14px', fontSize:13, color:C.yellow, fontWeight:600, display:'flex', gap:8, alignItems:'flex-start' }}>
-                  {Icon.info}
-                  <span>Vous avez déjà une commande en cours. Ces articles seront ajoutés à votre commande existante.</span>
-                </div>
-              )}
-
-              <button onClick={() => onCommander(note)}
-                style={{ ...S.btn('primary'), width:'100%', padding:'14px', fontSize:16 }}>
-                {commandeEnCours ? '+ Ajouter à la commande' : '🍽️ Commander'}
-              </button>
-            </>
+        {/* SEARCH */}
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>🔍</span>
+          <input
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Rechercher un plat..."
+            style={{ width: '100%', padding: '11px 14px 11px 40px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.grayLight, fontSize: 14, outline: 'none', color: C.dark, fontFamily: 'inherit' }}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
           )}
         </div>
       </div>
-    </div>
-  );
-}
 
-// ─── Statut commande banner ───────────────────────────────────────────
-const STATUT_INFO = {
-  en_attente:     { emoji:'⏳', label:'Commande reçue',        desc:'Le gérant va valider votre commande', color:C.yellow,  bg:C.yellowL },
-  valide:         { emoji:'✅', label:'Commande validée',      desc:'En attente de préparation',           color:C.blue,    bg:'#EFF6FF'  },
-  en_preparation: { emoji:'👨‍🍳', label:'En préparation',       desc:'Notre cuisine s\'affaire pour vous',   color:'#8B5CF6', bg:'#F5F3FF'  },
-  presque_pret:   { emoji:'🔔', label:'Presque prêt !',        desc:'Votre plat arrive bientôt',           color:'#14B8A6', bg:'#F0FDFA'  },
-  servi:          { emoji:'✨', label:'Bon appétit !',         desc:'Votre commande a été servie',          color:C.green,   bg:C.greenL   },
-  cloture:        { emoji:'🏁', label:'Table clôturée',        desc:'Merci pour votre visite !',           color:C.textGray,bg:C.bg       },
-  annule:         { emoji:'❌', label:'Commande annulée',      desc:'Contactez le serveur',                color:C.red,     bg:C.redL     },
-};
+      {/* ── CONTENU PRINCIPAL ──────────────────────────────────────────── */}
+      <div style={{ paddingBottom: 120 }} ref={scrollRef}>
 
-function StatutBanner({ commande }) {
-  if (!commande) return null;
-  const info = STATUT_INFO[commande.statut] || STATUT_INFO.en_attente;
-  return (
-    <div style={{ background:info.bg, border:`1px solid ${info.color}33`, borderRadius:14, padding:'14px 16px',
-      display:'flex', alignItems:'center', gap:14, margin:'0 16px' }}>
-      <div style={{ fontSize:28 }}>{info.emoji}</div>
-      <div style={{ flex:1 }}>
-        <div style={{ fontSize:15, fontWeight:700, color:info.color }}>{info.label}</div>
-        <div style={{ fontSize:12, color:C.textGray, marginTop:2 }}>{info.desc}</div>
-        {commande.total > 0 && (
-          <div style={{ fontSize:13, fontWeight:700, color:C.textDark, marginTop:4 }}>
-            Total : {Number(commande.total).toLocaleString('fr-CI')} FCFA
+        {/* STATUT COMMANDE (si commande active) */}
+        {commande && (
+          <div style={{ margin: '16px 16px 0', animation: 'slideUp .4s ease' }}>
+            <CommandeStatusBanner commande={commande} items={commandeItems} onVoirDetails={() => setView('commande')} onPayer={() => setShowPaiementModal(true)} />
+          </div>
+        )}
+
+        {/* BANNIÈRE PROMO (si pas de commande) */}
+        {!commande && (
+          <div style={{ margin: '16px 16px 0' }}>
+            <div style={{ borderRadius: 20, overflow: 'hidden', background: `linear-gradient(135deg, ${C.primary} 0%, #FF8C42 50%, #FFB347 100%)`, padding: '20px', position: 'relative', minHeight: 120 }}>
+              <div style={{ position: 'absolute', right: -10, top: -10, fontSize: 80, opacity: .15 }}>🍽️</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.8)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Bienvenue !</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: C.white, marginTop: 4, lineHeight: 1.2 }}>Commandez<br/>directement ici 👇</div>
+              <div style={{ marginTop: 10, fontSize: 12, color: 'rgba(255,255,255,.85)' }}>Scannez, choisissez, savourez</div>
+            </div>
+          </div>
+        )}
+
+        {/* CATÉGORIES */}
+        {!searchQuery && (
+          <div style={{ padding: '20px 0 0' }}>
+            <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>Catégories</div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '0 16px 4px' }}>
+              {categories.map((cat, i) => (
+                <button key={cat.id} className="cat-chip" onClick={() => scrollToCategory(cat.id)}
+                  style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 50, border: activeCat === cat.id ? 'none' : `1.5px solid ${C.border}`, background: activeCat === cat.id ? C.primary : C.white, color: activeCat === cat.id ? C.white : C.dark, fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .2s', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                  {cat.nom}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* LISTE PLATS par catégorie */}
+        {!searchQuery ? (
+          platsByCat.map(cat => cat.plats.length === 0 ? null : (
+            <div key={cat.id} ref={el => catRefs.current[cat.id] = el} style={{ marginTop: 24 }}>
+              <div style={{ padding: '0 16px 12px', fontSize: 16, fontWeight: 700, color: C.dark }}>{cat.nom}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 16px' }}>
+                {cat.plats.map(plat => (
+                  <PlatCard key={plat.id} plat={plat} quantite={quantiteDans(plat.id)} onAdd={() => ajouterAuPanier(plat)} onRemove={() => retirerDuPanier(plat.id)} onClick={() => setPlatDetail(plat)} />
+                ))}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div style={{ padding: '20px 16px 0' }}>
+            <div style={{ fontSize: 14, color: C.gray, marginBottom: 14 }}>{platsFiltres.length} résultat{platsFiltres.length !== 1 ? 's' : ''}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {platsFiltres.map(plat => (
+                <PlatCard key={plat.id} plat={plat} quantite={quantiteDans(plat.id)} onAdd={() => ajouterAuPanier(plat)} onRemove={() => retirerDuPanier(plat.id)} onClick={() => setPlatDetail(plat)} />
+              ))}
+            </div>
           </div>
         )}
       </div>
-      {/* Progress dots */}
-      <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-        {['en_attente','valide','en_preparation','presque_pret','servi'].map((s, i) => {
-          const statuts = ['en_attente','valide','en_preparation','presque_pret','servi','cloture'];
-          const currentIdx = statuts.indexOf(commande.statut);
-          const done = i <= currentIdx;
-          return <div key={s} style={{ width:8, height:8, borderRadius:'50%', background:done?info.color:C.border }}/>;
-        })}
+
+      {/* ── BOUTON PANIER FLOTTANT ────────────────────────────────────── */}
+      {countPanier > 0 && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 200, width: 'calc(100% - 32px)', maxWidth: 398, animation: 'slideUp .35s ease' }}>
+          <button className="btn-primary" onClick={() => setShowPanierModal(true)}
+            style={{ width: '100%', background: C.dark, border: 'none', borderRadius: 18, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', boxShadow: `0 8px 30px rgba(26,26,46,.35)`, transition: 'all .2s' }}>
+            <div style={{ background: C.primary, borderRadius: 10, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: C.white }}>{countPanier}</span>
+            </div>
+            <span style={{ fontSize: 15, fontWeight: 700, color: C.white }}>Voir mon panier</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: C.primary }}>{totalPanier.toLocaleString()} F</span>
+          </button>
+        </div>
+      )}
+
+      {/* ── MODAL PANIER ─────────────────────────────────────────────── */}
+      {showPanierModal && (
+        <ModalPanier
+          panier={panier}
+          total={totalPanier}
+          onClose={() => setShowPanierModal(false)}
+          onAdd={ajouterAuPanier}
+          onRemove={retirerDuPanier}
+          onCommander={async () => { await envoyerCommande(); setShowPanierModal(false); }}
+          plats={plats}
+        />
+      )}
+
+      {/* ── MODAL DÉTAIL PLAT ─────────────────────────────────────────── */}
+      {platDetail && (
+        <ModalPlatDetail
+          plat={platDetail}
+          quantite={quantiteDans(platDetail.id)}
+          onClose={() => setPlatDetail(null)}
+          onAdd={() => { ajouterAuPanier(platDetail); }}
+          onRemove={() => { retirerDuPanier(platDetail.id); }}
+        />
+      )}
+
+      {/* ── MODAL PAIEMENT ────────────────────────────────────────────── */}
+      {showPaiementModal && (
+        <ModalPaiement
+          commande={commande}
+          modePaiement={modePaiement}
+          setModePaiement={setModePaiement}
+          onClose={() => setShowPaiementModal(false)}
+          onConfirm={demanderPaiement}
+        />
+      )}
+
+      {/* ── VUE COMMANDE ─────────────────────────────────────────────── */}
+      {view === 'commande' && commande && (
+        <div style={{ position: 'fixed', inset: 0, background: C.bg, zIndex: 300, overflowY: 'auto', animation: 'slideUp .3s ease' }}>
+          <VueCommande commande={commande} items={commandeItems} restaurant={restaurant} table={table}
+            onBack={() => setView('menu')} onAppelServeur={appelServeur} appelEnvoye={appelEnvoye}
+            onPayer={() => { setView('menu'); setShowPaiementModal(true); }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── COMPOSANTS ──────────────────────────────────────────────────────────────
+
+function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
+  return (
+    <div className="plat-card" style={{ background: C.white, borderRadius: 18, overflow: 'hidden', display: 'flex', boxShadow: `0 2px 12px ${C.shadow}`, cursor: 'pointer', transition: 'transform .15s' }} onClick={onClick}>
+      {/* Image */}
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        {plat.image_url
+          ? <img src={plat.image_url} alt={plat.nom} style={{ width: 100, height: 100, objectFit: 'cover' }} />
+          : <div style={{ width: 100, height: 100, background: `linear-gradient(135deg, ${C.primaryLight}, #FFE0D5)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>🍽️</div>
+        }
+      </div>
+      {/* Infos */}
+      <div style={{ flex: 1, padding: '12px 14px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, lineHeight: 1.3 }}>{plat.nom}</div>
+          {plat.description && <div style={{ fontSize: 12, color: C.gray, marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.primary }}>{plat.prix.toLocaleString()} F</div>
+          {/* Stepper */}
+          <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {quantite > 0 ? (
+              <>
+                <button onClick={onRemove} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dark }}>−</button>
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.dark, minWidth: 16, textAlign: 'center' }}>{quantite}</span>
+              </>
+            ) : null}
+            <button onClick={onAdd} style={{ width: 32, height: 32, borderRadius: 10, border: 'none', background: C.primary, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.white, animation: quantite === 0 ? 'none' : 'bounce .3s ease' }}>+</button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Paiement modal ───────────────────────────────────────────────────
-function PaiementModal({ commande, onClose, onPay }) {
-  const [mode, setMode] = useState('');
-  const modes = [
-    { id:'especes', label:'💵 Espèces' },
-    { id:'mobile_money', label:'📱 Mobile Money' },
-    { id:'carte', label:'💳 Carte bancaire' },
-  ];
-  if (!commande) return null;
+function CommandeStatusBanner({ commande, items, onVoirDetails, onPayer }) {
+  const cfg = STATUT_CONFIG[commande.statut] || STATUT_CONFIG.en_attente;
+  const isPretOuServi = ['presque_pret', 'servi'].includes(commande.statut);
   return (
-    <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(26,26,46,0.6)', backdropFilter:'blur(6px)',
-      display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background:C.white, borderRadius:20, padding:24, width:'100%', maxWidth:360 }}>
-        <h3 style={{ margin:'0 0 6px', fontSize:18, fontWeight:800, color:C.textDark }}>Paiement</h3>
-        <p style={{ margin:'0 0 20px', fontSize:13, color:C.textGray }}>Choisissez votre mode de paiement</p>
-
-        <div style={{ background:C.orangeL, borderRadius:12, padding:'12px 16px', textAlign:'center', marginBottom:20 }}>
-          <div style={{ fontSize:11, color:C.textGray, fontWeight:600, marginBottom:2 }}>TOTAL À RÉGLER</div>
-          <div style={{ fontSize:28, fontWeight:800, color:C.orange }}>{Number(commande.total).toLocaleString('fr-CI')} FCFA</div>
+    <div style={{ background: cfg.bg, borderRadius: 18, padding: '14px 16px', border: `1.5px solid ${cfg.color}22`, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: cfg.color, borderRadius: '18px 18px 0 0' }}></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ fontSize: 26, animation: isPretOuServi ? 'pulse 1.2s infinite' : 'none' }}>{cfg.icon}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: cfg.color }}>{cfg.label}</div>
+          <div style={{ fontSize: 12, color: C.gray, marginTop: 1 }}>{items.length} article{items.length !== 1 ? 's' : ''} • {commande.total?.toLocaleString()} F</div>
         </div>
-
-        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
-          {modes.map(m => (
-            <button key={m.id} onClick={() => setMode(m.id)} style={{
-              padding:'13px 16px', borderRadius:12, border:`2px solid ${mode===m.id?C.orange:C.border}`,
-              background:mode===m.id?C.orangeL:C.white, color:C.textDark, fontSize:15, fontWeight:600,
-              cursor:'pointer', textAlign:'left', transition:'all .15s',
-            }}>{m.label}</button>
-          ))}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {commande.statut === 'servi' && (
+            <button onClick={onPayer} style={{ background: C.green, border: 'none', borderRadius: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700, color: C.white, cursor: 'pointer' }}>Payer</button>
+          )}
+          <button onClick={onVoirDetails} style={{ background: cfg.color, border: 'none', borderRadius: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700, color: C.white, cursor: 'pointer' }}>Voir</button>
         </div>
+      </div>
+    </div>
+  );
+}
 
-        <button onClick={() => mode && onPay(mode)} disabled={!mode}
-          style={{ ...S.btn('primary'), width:'100%', padding:'14px', opacity:mode?1:0.5 }}>
-          {Icon.wallet} Confirmer le paiement
+function ModalPanier({ panier, total, onClose, onAdd, onRemove, onCommander, plats }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)', animation: 'fadeIn .2s' }}></div>
+      <div style={{ position: 'relative', background: C.white, borderRadius: '24px 24px 0 0', padding: '0 0 40px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+        {/* Drag handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 0' }}>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border }}></div>
+        </div>
+        <div style={{ padding: '12px 20px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>Mon panier 🛒</div>
+          <button onClick={onClose} style={{ background: C.grayLight, border: 'none', borderRadius: 10, width: 32, height: 32, cursor: 'pointer', fontSize: 16 }}>✕</button>
+        </div>
+        <div style={{ overflowY: 'auto', flex: 1, padding: '12px 20px' }}>
+          {panier.map(item => {
+            const plat = plats.find(p => p.id === item.plat_id);
+            return (
+              <div key={item.plat_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
+                {plat?.image_url
+                  ? <img src={plat.image_url} alt="" style={{ width: 52, height: 52, borderRadius: 12, objectFit: 'cover' }} />
+                  : <div style={{ width: 52, height: 52, borderRadius: 12, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🍽️</div>
+                }
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.nom}</div>
+                  <div style={{ fontSize: 13, color: C.primary, fontWeight: 700 }}>{(item.prix * item.quantite).toLocaleString()} F</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={() => onRemove(item.plat_id)} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.white, cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                  <span style={{ fontSize: 14, fontWeight: 700, minWidth: 16, textAlign: 'center' }}>{item.quantite}</span>
+                  <button onClick={() => onAdd(plat)} style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: C.primary, cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.white }}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ padding: '16px 20px 0', borderTop: `1px solid ${C.border}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+            <span style={{ fontSize: 14, color: C.gray }}>Total</span>
+            <span style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{total.toLocaleString()} FCFA</span>
+          </div>
+          <button className="btn-primary" onClick={onCommander}
+            style={{ width: '100%', background: C.primary, border: 'none', borderRadius: 16, padding: '16px', fontSize: 15, fontWeight: 700, color: C.white, cursor: 'pointer', transition: 'all .2s' }}>
+            ✅ Envoyer la commande
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)', animation: 'fadeIn .2s' }}></div>
+      <div style={{ position: 'relative', background: C.white, borderRadius: '24px 24px 0 0', overflow: 'hidden', animation: 'slideUp .3s ease' }}>
+        {plat.image_url
+          ? <img src={plat.image_url} alt={plat.nom} style={{ width: '100%', height: 220, objectFit: 'cover' }} />
+          : <div style={{ width: '100%', height: 180, background: `linear-gradient(135deg, ${C.primaryLight}, #FFE0D5)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 60 }}>🍽️</div>
+        }
+        <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: C.white, border: 'none', borderRadius: '50%', width: 36, height: 36, cursor: 'pointer', fontSize: 18, boxShadow: `0 2px 8px ${C.shadowMd}` }}>✕</button>
+        <div style={{ padding: '20px 20px 40px' }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{plat.nom}</div>
+          {plat.description && <div style={{ fontSize: 14, color: C.gray, marginTop: 8, lineHeight: 1.6 }}>{plat.description}</div>}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.primary }}>{plat.prix.toLocaleString()} FCFA</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {quantite > 0 && <button onClick={onRemove} style={{ width: 38, height: 38, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>}
+              {quantite > 0 && <span style={{ fontSize: 16, fontWeight: 700 }}>{quantite}</span>}
+              <button onClick={onAdd} style={{ background: C.primary, border: 'none', borderRadius: 10, width: 38, height: 38, cursor: 'pointer', fontSize: 22, color: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalPaiement({ commande, modePaiement, setModePaiement, onClose, onConfirm }) {
+  const modes = [
+    { id: 'cash', label: 'Espèces', icon: '💵' },
+    { id: 'mobile_money', label: 'Mobile Money', icon: '📱' },
+    { id: 'carte', label: 'Carte bancaire', icon: '💳' },
+  ];
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'flex-end' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
+      <div style={{ position: 'relative', width: '100%', background: C.white, borderRadius: '24px 24px 0 0', padding: '20px 20px 40px', animation: 'slideUp .3s ease' }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 6 }}>Mode de paiement</div>
+        <div style={{ fontSize: 13, color: C.gray, marginBottom: 20 }}>Total : {commande?.total?.toLocaleString()} FCFA</div>
+        {modes.map(m => (
+          <button key={m.id} onClick={() => setModePaiement(m.id)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, border: `2px solid ${modePaiement === m.id ? C.primary : C.border}`, background: modePaiement === m.id ? C.primaryLight : C.white, marginBottom: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <span style={{ fontSize: 24 }}>{m.icon}</span>
+            <span style={{ fontSize: 15, fontWeight: 600, color: C.dark }}>{m.label}</span>
+            {modePaiement === m.id && <span style={{ marginLeft: 'auto', color: C.primary, fontSize: 18 }}>✓</span>}
+          </button>
+        ))}
+        <button onClick={onConfirm} disabled={!modePaiement}
+          style={{ width: '100%', background: modePaiement ? C.primary : C.grayLight, border: 'none', borderRadius: 16, padding: '15px', fontSize: 15, fontWeight: 700, color: modePaiement ? C.white : C.gray, cursor: modePaiement ? 'pointer' : 'not-allowed', marginTop: 4 }}>
+          Confirmer le paiement
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Appel serveur overlay ────────────────────────────────────────────
-function AppelOverlay({ onClose, onAppel, loading, done }) {
+function VueCommande({ commande, items, restaurant, table, onBack, onAppelServeur, appelEnvoye, onPayer }) {
+  const cfg = STATUT_CONFIG[commande.statut] || STATUT_CONFIG.en_attente;
+  const steps = ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'];
+  const stepIdx = steps.indexOf(commande.statut);
+
   return (
-    <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(26,26,46,0.6)', backdropFilter:'blur(6px)',
-      display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background:C.white, borderRadius:20, padding:28, width:'100%', maxWidth:320, textAlign:'center' }}>
-        {done ? (
-          <>
-            <div style={{ fontSize:48, marginBottom:12 }}>🔔</div>
-            <div style={{ fontSize:18, fontWeight:800, color:C.green, marginBottom:8 }}>Appel envoyé !</div>
-            <div style={{ fontSize:14, color:C.textGray, marginBottom:20 }}>Un serveur arrive bientôt.</div>
-            <button onClick={onClose} style={{ ...S.btn('primary'), width:'100%', padding:'12px' }}>OK</button>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize:48, marginBottom:12 }}>🛎️</div>
-            <div style={{ fontSize:18, fontWeight:800, color:C.textDark, marginBottom:8 }}>Appeler un serveur ?</div>
-            <div style={{ fontSize:14, color:C.textGray, marginBottom:24 }}>Un membre de l'équipe viendra vous voir rapidement.</div>
-            <div style={{ display:'flex', gap:10 }}>
-              <button onClick={onClose} style={{ ...S.btn('ghost'), flex:1, padding:'12px' }}>Annuler</button>
-              <button onClick={onAppel} disabled={loading} style={{ ...S.btn('primary'), flex:1, padding:'12px' }}>
-                {loading ? 'Envoi…' : Icon.bell}
-                {!loading && ' Appeler'}
-              </button>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+      {/* Header */}
+      <div style={{ background: C.white, padding: '52px 20px 16px', boxShadow: `0 2px 8px ${C.shadow}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button onClick={onBack} style={{ background: C.grayLight, border: 'none', borderRadius: 12, width: 38, height: 38, cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>←</button>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: C.dark }}>Ma commande</div>
+            <div style={{ fontSize: 12, color: C.gray }}>Table {table?.numero} • {restaurant.nom}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding: '20px 16px', paddingBottom: 120 }}>
+        {/* Statut visuel */}
+        <div style={{ background: C.white, borderRadius: 20, padding: '20px', marginBottom: 16, boxShadow: `0 2px 12px ${C.shadow}` }}>
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 48, animation: ['presque_pret','servi'].includes(commande.statut) ? 'pulse 1.2s infinite' : 'none' }}>{cfg.icon}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: cfg.color, marginTop: 8 }}>{cfg.label}</div>
+          </div>
+          {/* Stepper */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {steps.map((s, i) => (
+              <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 1 : 'none' }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: i <= stepIdx ? C.primary : C.grayLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .4s' }}>
+                  {i <= stepIdx ? <span style={{ color: C.white, fontSize: 14 }}>✓</span> : <span style={{ width: 8, height: 8, borderRadius: '50%', background: C.border, display: 'block' }}></span>}
+                </div>
+                {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? C.primary : C.grayLight, margin: '0 4px', transition: 'all .4s' }}></div>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Articles commandés */}
+        <div style={{ background: C.white, borderRadius: 20, padding: '16px 20px', marginBottom: 16, boxShadow: `0 2px 12px ${C.shadow}` }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 12 }}>Articles commandés</div>
+          {items.map(item => (
+            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.nom_plat}</div>
+                {item.note && <div style={{ fontSize: 12, color: C.gray }}>Note : {item.note}</div>}
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 13, color: C.gray }}>×{item.quantite}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
+              </div>
             </div>
-          </>
-        )}
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Total</span>
+            <span style={{ fontSize: 16, fontWeight: 800, color: C.primary }}>{commande.total?.toLocaleString()} FCFA</span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button onClick={onAppelServeur}
+            style={{ flex: 1, background: appelEnvoye ? C.green : C.dark, border: 'none', borderRadius: 16, padding: '14px', fontSize: 14, fontWeight: 700, color: C.white, cursor: 'pointer', transition: 'all .3s' }}>
+            {appelEnvoye ? '✅ Appelé !' : '🔔 Appeler serveur'}
+          </button>
+          {commande.statut === 'servi' && (
+            <button onClick={onPayer}
+              style={{ flex: 1, background: C.primary, border: 'none', borderRadius: 16, padding: '14px', fontSize: 14, fontWeight: 700, color: C.white, cursor: 'pointer' }}>
+              💳 Payer
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────
-export default function MenuClientPage() {
-  const params = useParams();
-  const { slug, tableId } = params;
-
-  const [restaurant, setRestaurant] = useState(null);
-  const [table, setTable]           = useState(null);
-  const [categories, setCategories] = useState([]);
-  const [plats, setPlats]           = useState([]);
-  const [commande, setCommande]     = useState(null); // commande active de cette table
-  const [commandeItems, setCommandeItems] = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState(null);
-
-  const [activeCat, setActiveCat]   = useState(null);
-  const [panier, setPanier]         = useState([]); // {id, nom, prix, qty, note}
-  const [modalPlat, setModalPlat]   = useState(null);
-  const [showPanier, setShowPanier] = useState(false);
-  const [showAppel, setShowAppel]   = useState(false);
-  const [appelDone, setAppelDone]   = useState(false);
-  const [appelLoading, setAppelLoading] = useState(false);
-  const [showPaiement, setShowPaiement] = useState(false);
-  const [toast, setToast]           = useState(null);
-
-  const showToast = (msg, type='success') => {
-    setToast({ msg, type });
-  };
-
-  // ── Load data ──
-  useEffect(() => {
-    (async () => {
-      // Find restaurant by slug
-      const { data: resto, error: restoErr } = await supabase
-        .from('restaurants').select('*').eq('slug', slug).single();
-      if (restoErr || !resto) { setError('Restaurant introuvable'); setLoading(false); return; }
-      setRestaurant(resto);
-
-      // Find table
-      const { data: tbl } = await supabase.from('tables').select('*').eq('id', tableId).single();
-      if (!tbl) { setError('Table introuvable'); setLoading(false); return; }
-      setTable(tbl);
-
-      // Cats & plats
-      const [catsRes, platsRes] = await Promise.all([
-        supabase.from('categories').select('*').eq('restaurant_id', resto.id).order('ordre'),
-        supabase.from('plats').select('*').eq('restaurant_id', resto.id).eq('disponible', true).order('ordre'),
-      ]);
-      setCategories(catsRes.data || []);
-      setPlats(platsRes.data || []);
-      if (catsRes.data?.length > 0) setActiveCat(catsRes.data[0].id);
-
-      // Commande active sur cette table (pas clôturée ni annulée)
-      const { data: cmd } = await supabase.from('commandes').select('*')
-        .eq('table_id', tableId)
-        .not('statut', 'in', '(cloture,annule)')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-      if (cmd) {
-        setCommande(cmd);
-        const { data: citems } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
-        setCommandeItems(citems || []);
-      }
-      setLoading(false);
-    })();
-  }, [slug, tableId]);
-
-  // ── Realtime commande ──
-  useEffect(() => {
-    if (!commande) return;
-    const ch = supabase.channel(`commande-${commande.id}`)
-      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'commandes', filter:`id=eq.${commande.id}` },
-        payload => {
-          setCommande(payload.new);
-          if (payload.new.statut === 'servi') showToast('✨ Votre commande est servie !', 'success');
-          if (payload.new.statut === 'presque_pret') showToast('🔔 Votre commande arrive !', 'success');
-        })
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:'commande_items' },
-        payload => {
-          if (payload.new.commande_id === commande.id) {
-            setCommandeItems(ci => [...ci, payload.new]);
-          }
-        })
-      .subscribe();
-    return () => supabase.removeChannel(ch);
-  }, [commande?.id]);
-
-  // ── Panier helpers ──
-  const addToCart = (plat, qty, note) => {
-    setPanier(p => {
-      const existing = p.find(i => i.id === plat.id && i.note === note);
-      if (existing) return p.map(i => i.id === plat.id && i.note === note ? { ...i, qty: i.qty + qty } : i);
-      return [...p, { id: plat.id, nom: plat.nom, prix: plat.prix, qty, note }];
-    });
-    showToast(`${plat.nom} ajouté !`);
-  };
-
-  const updateQty = (id, qty) => setPanier(p => p.map(i => i.id === id ? { ...i, qty } : i));
-  const removeItem = (id) => setPanier(p => p.filter(i => i.id !== id));
-  const totalPanier = panier.reduce((s, i) => s + i.prix * i.qty, 0);
-  const nbPanier = panier.reduce((s, i) => s + i.qty, 0);
-
-  // ── Commander ──
-  const commander = async () => {
-    if (panier.length === 0) return;
-    const items = panier.map(i => ({
-      plat_id: i.id,
-      nom_plat: i.nom,
-      prix_unitaire: i.prix,
-      quantite: i.qty,
-      note: i.note || null,
-    }));
-
-    if (commande && !['cloture', 'annule'].includes(commande.statut)) {
-      // Ajouter à commande existante
-      const newItems = items.map(i => ({ ...i, commande_id: commande.id }));
-      await supabase.from('commande_items').insert(newItems);
-      const newTotal = commandeItems.reduce((s, i) => s + i.prix_unitaire * i.quantite, 0) + totalPanier;
-      await supabase.from('commandes').update({ total: newTotal }).eq('id', commande.id);
-      setCommande(c => ({ ...c, total: newTotal }));
-      showToast('Articles ajoutés à votre commande !');
-    } else {
-      // Nouvelle commande
-      const { data: cmd, error } = await supabase.from('commandes').insert({
-        restaurant_id: restaurant.id,
-        table_id: tableId,
-        statut: 'en_attente',
-        total: totalPanier,
-        paye: false,
-      }).select().single();
-      if (error || !cmd) { showToast('Erreur, réessayez', 'error'); return; }
-
-      const withCmd = items.map(i => ({ ...i, commande_id: cmd.id }));
-      await supabase.from('commande_items').insert(withCmd);
-      // Marquer table occupée
-      await supabase.from('tables').update({ statut: 'occupee' }).eq('id', tableId);
-      setCommande(cmd);
-      setCommandeItems(withCmd);
-      showToast('Commande envoyée ! 🎉');
-    }
-    setPanier([]);
-    setShowPanier(false);
-  };
-
-  // ── Appel serveur ──
-  const appelServeur = async () => {
-    setAppelLoading(true);
-    await supabase.from('appels_serveur').insert({
-      restaurant_id: restaurant.id,
-      table_id: tableId,
-      traite: false,
-    });
-    setAppelLoading(false);
-    setAppelDone(true);
-  };
-
-  // ── Paiement ──
-  const demanderPaiement = async (mode) => {
-    if (!commande) return;
-    await supabase.from('commandes').update({ paye: true, mode_paiement: mode }).eq('id', commande.id);
-    setCommande(c => ({ ...c, paye: true, mode_paiement: mode }));
-    setShowPaiement(false);
-    showToast('Paiement confirmé ! Merci 🙏');
-  };
-
-  // ── Filtered plats ──
-  const platsDuCat = plats.filter(p => p.categorie_id === activeCat);
-
-  if (loading) return (
-    <div style={{ minHeight:'100vh', background:C.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
-      <div style={{ fontSize:40 }}>🍽️</div>
-      <div style={{ fontSize:14, color:C.textGray, fontFamily:'system-ui' }}>Chargement du menu…</div>
-    </div>
-  );
-
-  if (error) return (
-    <div style={{ minHeight:'100vh', background:C.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:24 }}>
-      <div style={{ fontSize:48 }}>😕</div>
-      <div style={{ fontSize:18, fontWeight:700, color:C.textDark, textAlign:'center' }}>{error}</div>
-      <div style={{ fontSize:13, color:C.textGray, textAlign:'center' }}>Vérifiez le QR code ou demandez de l'aide au serveur.</div>
-    </div>
-  );
-
+function LoadingScreen() {
   return (
-    <div style={{ minHeight:'100vh', background:C.bg, fontFamily:'system-ui, sans-serif', paddingBottom:90 }}>
-      <style>{`
-        @keyframes slideDown{from{transform:translateX(-50%) translateY(-10px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-        * { -webkit-tap-highlight-color: transparent; }
-      `}</style>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: C.bg, fontFamily: 'system-ui' }}>
+      <div style={{ fontSize: 48, animation: 'pulse 1s infinite' }}>🍽️</div>
+      <div style={{ marginTop: 16, fontSize: 16, fontWeight: 600, color: C.dark }}>Chargement du menu...</div>
+    </div>
+  );
+}
 
-      {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)}/>}
-
-      {/* Header */}
-      <div style={{ background:C.header, padding:'16px 20px 14px', position:'sticky', top:0, zIndex:50 }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <div>
-            <div style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' }}>
-              {restaurant?.nom}
-            </div>
-            <div style={{ fontSize:20, fontWeight:800, color:C.white }}>
-              Table {table?.numero}
-            </div>
-          </div>
-          {/* Appel serveur */}
-          <button onClick={() => { setAppelDone(false); setShowAppel(true); }}
-            style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, background:'rgba(255,255,255,0.1)', border:'none', borderRadius:12, padding:'8px 14px', cursor:'pointer', color:C.white }}>
-            {Icon.bell}
-            <span style={{ fontSize:10, fontWeight:600 }}>Serveur</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Statut commande */}
-      {commande && (
-        <div style={{ padding:'14px 0 0' }}>
-          <StatutBanner commande={commande}/>
-          {/* Bouton paiement si servi et non payé */}
-          {commande.statut === 'servi' && !commande.paye && (
-            <div style={{ padding:'10px 16px 0' }}>
-              <button onClick={() => setShowPaiement(true)}
-                style={{ ...S.btn('primary'), width:'100%', padding:'13px', fontSize:15 }}>
-                {Icon.wallet} Régler la note · {Number(commande.total).toLocaleString('fr-CI')} FCFA
-              </button>
-            </div>
-          )}
-          {commande.paye && commande.statut !== 'cloture' && (
-            <div style={{ margin:'10px 16px 0', background:C.greenL, borderRadius:12, padding:'10px 14px', display:'flex', gap:8, alignItems:'center' }}>
-              {Icon.check}
-              <span style={{ fontSize:13, fontWeight:600, color:C.green }}>Paiement enregistré · Merci !</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Category tabs */}
-      <div style={{ background:C.white, borderBottom:`1px solid ${C.border}`, position:'sticky', top:64, zIndex:40, marginTop:14 }}>
-        <div style={{ display:'flex', overflowX:'auto', scrollbarWidth:'none', padding:'0 16px' }}>
-          {categories.map(cat => {
-            const active = activeCat === cat.id;
-            return (
-              <button key={cat.id} onClick={() => setActiveCat(cat.id)} style={{
-                padding:'12px 14px', border:'none', background:'transparent', cursor:'pointer',
-                fontSize:13, fontWeight:700, whiteSpace:'nowrap', fontFamily:'system-ui, sans-serif',
-                color: active ? C.orange : C.textGray,
-                borderBottom: active ? `2px solid ${C.orange}` : '2px solid transparent',
-                flexShrink: 0,
-              }}>
-                {cat.nom}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Plats grid */}
-      <div style={{ padding:'14px 16px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-        {platsDuCat.length === 0 ? (
-          <div style={{ gridColumn:'span 2', padding:32, textAlign:'center', color:C.textGray, fontSize:13 }}>
-            Aucun plat disponible dans cette catégorie
-          </div>
-        ) : (
-          platsDuCat.map(plat => {
-            const qtyInCart = panier.find(i => i.id === plat.id)?.qty || 0;
-            return (
-              <div key={plat.id} onClick={() => setModalPlat(plat)}
-                style={{ ...S.card, overflow:'hidden', cursor:'pointer', position:'relative', opacity:plat.disponible?1:0.6 }}>
-                {/* Image */}
-                <div style={{ width:'100%', height:110, background:C.bg, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  {plat.image_url
-                    ? <img src={plat.image_url} alt={plat.nom} style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
-                    : <span style={{ color:C.textLight }}>{Icon.image}</span>}
-                </div>
-                {/* Badge qty */}
-                {qtyInCart > 0 && (
-                  <div style={{ position:'absolute', top:8, right:8, width:22, height:22, borderRadius:'50%',
-                    background:C.orange, color:C.white, fontSize:11, fontWeight:800,
-                    display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    {qtyInCart}
-                  </div>
-                )}
-                <div style={{ padding:'10px 10px 12px' }}>
-                  <div style={{ fontSize:13, fontWeight:700, color:C.textDark, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{plat.nom}</div>
-                  {plat.description && (
-                    <div style={{ fontSize:11, color:C.textGray, marginBottom:6, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{plat.description}</div>
-                  )}
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                    <span style={{ fontSize:13, fontWeight:800, color:C.orange }}>{Number(plat.prix).toLocaleString('fr-CI')} F</span>
-                    {plat.disponible && (
-                      <div style={{ width:24, height:24, borderRadius:'50%', background:C.orange, display:'flex', alignItems:'center', justifyContent:'center', color:C.white }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Bottom bar fixe */}
-      {nbPanier > 0 && (
-        <div style={{ position:'fixed', bottom:0, left:0, right:0, padding:'12px 16px', background:C.white, borderTop:`1px solid ${C.border}`, zIndex:90 }}>
-          <button onClick={() => setShowPanier(true)} style={{ ...S.btn('primary'), width:'100%', padding:'14px', fontSize:15, position:'relative' }}>
-            <span style={{ position:'absolute', left:16, top:'50%', transform:'translateY(-50%)',
-              background:'rgba(255,255,255,0.3)', borderRadius:'50%', width:26, height:26,
-              display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800 }}>
-              {nbPanier}
-            </span>
-            {Icon.cart} Voir le panier · {totalPanier.toLocaleString('fr-CI')} FCFA
-          </button>
-        </div>
-      )}
-
-      {/* Modals */}
-      {modalPlat && <PlatModal plat={modalPlat} onClose={() => setModalPlat(null)} onAdd={addToCart}/>}
-      {showPanier && <PanierModal items={panier} onClose={() => setShowPanier(false)} onCommander={commander} onUpdateQty={updateQty} onRemove={removeItem} commandeEnCours={!!commande && !['cloture','annule'].includes(commande?.statut)}/>}
-      {showAppel && <AppelOverlay onClose={() => setShowAppel(false)} onAppel={appelServeur} loading={appelLoading} done={appelDone}/>}
-      {showPaiement && <PaiementModal commande={commande} onClose={() => setShowPaiement(false)} onPay={demanderPaiement}/>}
+function ErrorScreen() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: C.bg, fontFamily: 'system-ui', padding: 24 }}>
+      <div style={{ fontSize: 48 }}>😕</div>
+      <div style={{ marginTop: 16, fontSize: 18, fontWeight: 700, color: C.dark }}>Restaurant introuvable</div>
+      <div style={{ marginTop: 8, fontSize: 14, color: C.gray, textAlign: 'center' }}>Vérifiez le QR code ou contactez le restaurant</div>
     </div>
   );
 }
