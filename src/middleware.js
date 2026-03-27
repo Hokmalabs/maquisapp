@@ -3,26 +3,28 @@ import { NextResponse } from 'next/server';
 export function middleware(request) {
   const { pathname } = request.nextUrl;
 
-  // Routes publiques — pas de protection
+  // Tout ce qui est public — laisser passer sans vérification
   if (
     pathname.startsWith('/menu') ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/icons') ||
+    pathname.startsWith('/api') ||
     pathname === '/manifest.json' ||
     pathname === '/sw.js' ||
     pathname === '/offline.html' ||
-    pathname === '/favicon.ico'
+    pathname === '/favicon.ico' ||
+    pathname === '/'
   ) {
     return NextResponse.next();
   }
 
-  // Routes dashboard — vérifier la session
-  const token =
-    request.cookies.get('sb-access-token') ||
-    request.cookies.get('sb-klfmifhwklhcpwwxfwlk-auth-token');
+  // Pour le dashboard, chercher n'importe quel cookie Supabase
+  const cookieHeader = request.headers.get('cookie') || '';
+  const hasSession = cookieHeader.includes('sb-') || 
+                     cookieHeader.includes('supabase');
 
-  if (!token) {
+  if (!hasSession) {
     return NextResponse.redirect(new URL('/auth/login', request.url));
   }
 
