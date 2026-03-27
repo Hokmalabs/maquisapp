@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 // URL de base de l'app — définie dans .env.local et sur Vercel
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || '';
