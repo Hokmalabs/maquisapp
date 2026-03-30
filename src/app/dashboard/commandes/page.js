@@ -9,26 +9,35 @@ const C = {
   green: '#00C851', yellow: '#FFB800', red: '#FF3B30', shadow: 'rgba(0,0,0,0.07)',
 }
 
-const STATUTS = ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']
 const STATUT_CFG = {
-  en_attente:     { label: 'En attente',    color: '#FFB800', bg: '#FFF8E1', icon: '⏳', next: 'valide', nextLabel: 'Valider' },
-  valide:         { label: 'Validée',       color: '#00C851', bg: '#E8F5E9', icon: '✅', next: 'en_preparation', nextLabel: 'Préparer' },
-  en_preparation: { label: 'En préparation',color: '#FF6B35', bg: '#FFF0EB', icon: '👨‍🍳', next: 'presque_pret', nextLabel: 'Presque prêt' },
-  presque_pret:   { label: 'Presque prêt',  color: '#E85520', bg: '#FFE8E0', icon: '🔔', next: 'servi', nextLabel: 'Servir' },
-  servi:          { label: 'Servi',         color: '#00C851', bg: '#E8F5E9', icon: '🍽️', next: 'cloture', nextLabel: 'Clôturer' },
+  en_attente:     { label: 'En attente',     color: '#FFB800', bg: '#FFF8E1', icon: '⏳', next: 'valide',        nextLabel: 'Valider' },
+  valide:         { label: 'Validée',        color: '#00C851', bg: '#E8F5E9', icon: '✅', next: 'en_preparation', nextLabel: 'Préparer' },
+  en_preparation: { label: 'En préparation', color: '#FF6B35', bg: '#FFF0EB', icon: '👨‍🍳', next: 'presque_pret',  nextLabel: 'Presque prêt' },
+  presque_pret:   { label: 'Presque prêt',   color: '#E85520', bg: '#FFE8E0', icon: '🔔', next: 'servi',         nextLabel: 'Servir' },
+  servi:          { label: 'Servi',          color: '#00C851', bg: '#E8F5E9', icon: '🍽️', next: 'cloture',       nextLabel: 'Clôturer' },
 }
+
+const MODES_PAIEMENT = [
+  { id: 'wave',         label: 'Wave',          icon: '🌊' },
+  { id: 'orange_money', label: 'Orange Money',  icon: '🟠' },
+  { id: 'mtn_money',   label: 'MTN Money',     icon: '💛' },
+  { id: 'cash',        label: 'Espèces',       icon: '💵' },
+  { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
+]
 
 export default function CommandesPage() {
   const router = useRouter()
   const [restaurant, setRestaurant] = useState(null)
-  const [commandes, setCommandes] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all')
-  const [selectedCmd, setSelectedCmd] = useState(null)
-  const [cmdItems, setCmdItems] = useState([])
-  const [loadingItems, setLoadingItems] = useState(false)
-  const [updating, setUpdating] = useState(false)
-  const timers = useRef({})
+  const [commandes, setCommandes]   = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [filter, setFilter]         = useState('all')
+  // selectedGroup = { table, cmds, items }
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [groupItems, setGroupItems]       = useState({}) // { cmdId: [items] }
+  const [loadingItems, setLoadingItems]   = useState(false)
+  const [updating, setUpdating]           = useState(false)
+  const [showTicket, setShowTicket]       = useState(false)
+  const [ticketData, setTicketData]       = useState(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -38,14 +47,10 @@ export default function CommandesPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'commandes', filter: `restaurant_id=eq.${restaurant.id}` }, () => {
         refreshCommandes(restaurant.id)
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'commande_items' }, () => {
-        if (selectedCmd) loadItems(selectedCmd.id)
-      })
       .subscribe()
     return () => supabase.removeChannel(ch)
-  }, [restaurant, selectedCmd])
+  }, [restaurant])
 
-  // Chrono
   useEffect(() => {
     const id = setInterval(() => setCommandes(prev => [...prev]), 30000)
     return () => clearInterval(id)
@@ -71,16 +76,27 @@ export default function CommandesPage() {
     setCommandes(data || [])
   }
 
-  async function loadItems(cmdId) {
-    setLoadingItems(true)
-    const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmdId)
-    setCmdItems(data || [])
-    setLoadingItems(false)
+  // ─── GROUPEMENT PAR TABLE ─────────────────────────────────────────────────
+  function grouperParTable(cmds) {
+    const map = {}
+    for (const cmd of cmds) {
+      const key = cmd.table_id
+      if (!map[key]) map[key] = { table: cmd.tables, cmds: [] }
+      map[key].cmds.push(cmd)
+    }
+    return Object.values(map)
   }
 
-  async function openDetail(cmd) {
-    setSelectedCmd(cmd)
-    loadItems(cmd.id)
+  async function ouvrirGroupe(group) {
+    setLoadingItems(true)
+    setSelectedGroup(group)
+    const items = {}
+    for (const cmd of group.cmds) {
+      const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id)
+      items[cmd.id] = data || []
+    }
+    setGroupItems(items)
+    setLoadingItems(false)
   }
 
   async function changerStatut(cmd, newStatut) {
@@ -89,33 +105,83 @@ export default function CommandesPage() {
     if (newStatut === 'valide') update.validated_at = new Date().toISOString()
     if (newStatut === 'servi') update.served_at = new Date().toISOString()
     await supabase.from('commandes').update(update).eq('id', cmd.id)
-    // Si clôture, libérer la table
+
     if (newStatut === 'cloture') {
-      await supabase.from('tables').update({ statut: 'libre' }).eq('id', cmd.table_id)
-      setSelectedCmd(null)
-      setCmdItems([])
-    } else {
-      setSelectedCmd(prev => ({ ...prev, statut: newStatut }))
+      // Vérifier s'il reste des commandes actives sur cette table
+      const autresCmds = selectedGroup.cmds.filter(c => c.id !== cmd.id)
+      const toutesTerminees = autresCmds.every(c => c.statut === 'cloture' || c.statut === 'annule')
+      if (toutesTerminees || autresCmds.length === 0) {
+        await supabase.from('tables').update({ statut: 'libre' }).eq('id', cmd.table_id)
+      }
     }
+
     setUpdating(false)
-    refreshCommandes(restaurant.id)
+    await refreshCommandes(restaurant.id)
+    // Rafraîchir le groupe sélectionné
+    if (selectedGroup) {
+      const { data: cmdsUpdated } = await supabase
+        .from('commandes')
+        .select('*, tables(numero, zone)')
+        .eq('table_id', cmd.table_id)
+        .not('statut', 'in', '("cloture","annule")')
+      if (!cmdsUpdated?.length) {
+        setSelectedGroup(null)
+        setGroupItems({})
+      } else {
+        setSelectedGroup(prev => ({ ...prev, cmds: cmdsUpdated }))
+      }
+    }
   }
 
-  async function supprimerItem(itemId) {
+  async function cloturerTout(group, modePaiement) {
+    setUpdating(true)
+    for (const cmd of group.cmds) {
+      if (!['cloture', 'annule'].includes(cmd.statut)) {
+        await supabase.from('commandes').update({ statut: 'cloture', mode_paiement: modePaiement }).eq('id', cmd.id)
+      }
+    }
+    await supabase.from('tables').update({ statut: 'libre' }).eq('id', group.table?.id || group.cmds[0].table_id)
+    setUpdating(false)
+    setSelectedGroup(null)
+    setGroupItems({})
+    await refreshCommandes(restaurant.id)
+  }
+
+  async function supprimerItem(itemId, cmdId) {
     await supabase.from('commande_items').delete().eq('id', itemId)
-    const newItems = cmdItems.filter(i => i.id !== itemId)
-    setCmdItems(newItems)
+    const newItems = (groupItems[cmdId] || []).filter(i => i.id !== itemId)
     const newTotal = newItems.reduce((s, i) => s + i.prix_unitaire * i.quantite, 0)
-    await supabase.from('commandes').update({ total: newTotal }).eq('id', selectedCmd.id)
-    setSelectedCmd(prev => ({ ...prev, total: newTotal }))
+    await supabase.from('commandes').update({ total: newTotal }).eq('id', cmdId)
+    setGroupItems(prev => ({ ...prev, [cmdId]: newItems }))
+    setSelectedGroup(prev => ({
+      ...prev,
+      cmds: prev.cmds.map(c => c.id === cmdId ? { ...c, total: newTotal } : c)
+    }))
   }
 
   async function annulerCommande(cmd) {
     await supabase.from('commandes').update({ statut: 'annule' }).eq('id', cmd.id)
-    await supabase.from('tables').update({ statut: 'libre' }).eq('id', cmd.table_id)
-    setSelectedCmd(null)
-    setCmdItems([])
-    refreshCommandes(restaurant.id)
+    const restantes = selectedGroup.cmds.filter(c => c.id !== cmd.id && !['annule','cloture'].includes(c.statut))
+    if (!restantes.length) {
+      await supabase.from('tables').update({ statut: 'libre' }).eq('id', cmd.table_id)
+      setSelectedGroup(null)
+      setGroupItems({})
+    } else {
+      setSelectedGroup(prev => ({ ...prev, cmds: prev.cmds.filter(c => c.id !== cmd.id) }))
+    }
+    await refreshCommandes(restaurant.id)
+  }
+
+  function ouvrirTicket(group) {
+    const allItems = []
+    for (const cmd of group.cmds) {
+      const items = groupItems[cmd.id] || []
+      allItems.push(...items.map(i => ({ ...i, cmdStatut: cmd.statut })))
+    }
+    const total = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
+    const modePaiement = group.cmds[group.cmds.length - 1]?.mode_paiement || ''
+    setTicketData({ group, allItems, total, modePaiement, restaurant, date: new Date() })
+    setShowTicket(true)
   }
 
   const getTemps = (created_at) => {
@@ -134,7 +200,19 @@ export default function CommandesPage() {
 
   const formatCFA = (n) => new Intl.NumberFormat('fr-FR').format(n || 0) + ' F'
 
-  const filtered = filter === 'all' ? commandes : commandes.filter(c => c.statut === filter)
+  const groupes = grouperParTable(commandes)
+  const groupesFiltres = filter === 'all'
+    ? groupes
+    : groupes.filter(g => g.cmds.some(c => c.statut === filter))
+
+  // Statut dominant du groupe (le moins avancé)
+  function statutDominant(cmds) {
+    const ordre = ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']
+    for (const s of ordre) {
+      if (cmds.some(c => c.statut === s)) return s
+    }
+    return cmds[0]?.statut || 'en_attente'
+  }
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
@@ -156,6 +234,12 @@ export default function CommandesPage() {
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
         .cmd-card:active { transform: scale(0.98); }
         .btn:active { transform: scale(0.97); opacity:.9; }
+        @media print {
+          body * { visibility: hidden; }
+          #ticket-print, #ticket-print * { visibility: visible; }
+          #ticket-print { position: fixed; left: 0; top: 0; width: 80mm; font-size: 11px; font-family: monospace; }
+          .no-print { display: none !important; }
+        }
       `}</style>
 
       {/* HEADER */}
@@ -170,7 +254,7 @@ export default function CommandesPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#E8F5E9', borderRadius: 20, padding: '4px 10px' }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, animation: 'blink 1.5s infinite' }}></div>
-            <span style={{ fontSize: 11, color: C.green, fontWeight: 700 }}>Live • {commandes.length}</span>
+            <span style={{ fontSize: 11, color: C.green, fontWeight: 700 }}>Live • {groupes.length} table{groupes.length > 1 ? 's' : ''}</span>
           </div>
         </div>
       </div>
@@ -191,40 +275,79 @@ export default function CommandesPage() {
         ))}
       </div>
 
-      {/* LISTE COMMANDES */}
+      {/* LISTE GROUPÉE PAR TABLE */}
       <div style={{ padding: '12px 16px 0' }}>
-        {filtered.length === 0 ? (
+        {groupesFiltres.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: C.gray }}>
             <div style={{ fontSize: 44 }}>✅</div>
             <div style={{ fontSize: 14, fontWeight: 600, marginTop: 12 }}>Aucune commande en cours</div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>Les nouvelles commandes apparaîtront ici</div>
           </div>
-        ) : filtered.map(cmd => {
-          const cfg = STATUT_CFG[cmd.statut] || STATUT_CFG.en_attente
+        ) : groupesFiltres.map((group, gi) => {
+          const statut = statutDominant(group.cmds)
+          const cfg = STATUT_CFG[statut] || STATUT_CFG.en_attente
+          const totalGroupe = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
+          const plusAncienne = group.cmds[0]?.created_at
+          const toutesServies = group.cmds.every(c => c.statut === 'servi')
+
           return (
-            <div key={cmd.id} className="cmd-card" onClick={() => openDetail(cmd)}
-              style={{ background: C.white, borderRadius: 16, padding: '13px 14px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 10, cursor: 'pointer', transition: 'transform .15s', borderLeft: `4px solid ${cfg.color}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 11, background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, animation: cmd.statut === 'presque_pret' ? 'pulse 1.2s infinite' : 'none' }}>{cfg.icon}</div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Table {cmd.tables?.numero}</div>
-                    <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>{cmd.tables?.zone || 'Salle'}</div>
+            <div key={gi} className="cmd-card" style={{ background: C.white, borderRadius: 16, boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 12, overflow: 'hidden', transition: 'transform .15s', borderLeft: `4px solid ${cfg.color}` }}>
+              {/* En-tête table */}
+              <div style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => ouvrirGroupe(group)}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 11, background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{cfg.icon}</div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Table {group.table?.numero}</div>
+                      <div style={{ fontSize: 11, color: C.gray }}>
+                        {group.table?.zone || 'Salle'} •
+                        <span style={{ marginLeft: 4, color: group.cmds.length > 1 ? C.primary : C.gray, fontWeight: group.cmds.length > 1 ? 700 : 400 }}>
+                          {group.cmds.length} commande{group.cmds.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: C.dark }}>{formatCFA(totalGroupe)}</div>
+                    <div style={{ fontSize: 10, color: getTempsColor(plusAncienne), fontWeight: 600, marginTop: 2 }}>⏱ {getTemps(plusAncienne)}</div>
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: C.dark }}>{formatCFA(cmd.total)}</div>
-                  <div style={{ fontSize: 10, color: getTempsColor(cmd.created_at), fontWeight: 600, marginTop: 2 }}>⏱ {getTemps(cmd.created_at)}</div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-                <div style={{ background: cfg.bg, color: cfg.color, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>{cfg.label}</div>
-                {cfg.next && (
-                  <button className="btn" onClick={e => { e.stopPropagation(); changerStatut(cmd, cfg.next) }}
-                    style={{ background: cfg.color, border: 'none', borderRadius: 10, padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {cfg.nextLabel} →
-                  </button>
+
+                {/* Mini liste des commandes du groupe */}
+                {group.cmds.length > 1 && (
+                  <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {group.cmds.map((c, i) => {
+                      const cs = STATUT_CFG[c.statut]
+                      return cs ? (
+                        <div key={c.id} style={{ background: cs.bg, color: cs.color, borderRadius: 16, padding: '2px 8px', fontSize: 9, fontWeight: 700 }}>
+                          {cs.icon} Cmd {i + 1} — {cs.label}
+                        </div>
+                      ) : null
+                    })}
+                  </div>
                 )}
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                  <div style={{ background: cfg.bg, color: cfg.color, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>{cfg.label}</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {toutesServies && (
+                      <button className="btn" onClick={e => { e.stopPropagation(); ouvrirGroupe(group) }}
+                        style={{ background: C.green, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        💳 Encaisser
+                      </button>
+                    )}
+                    {!toutesServies && cfg.next && (
+                      <button className="btn" onClick={e => {
+                        e.stopPropagation()
+                        // Avancer toutes les commandes en_attente du groupe
+                        const aAvancer = group.cmds.filter(c => c.statut === statut)
+                        aAvancer.forEach(c => changerStatut(c, cfg.next))
+                      }}
+                        style={{ background: cfg.color, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {cfg.nextLabel} →
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )
@@ -249,71 +372,230 @@ export default function CommandesPage() {
         ))}
       </div>
 
-      {/* MODAL DÉTAIL COMMANDE */}
-      {selectedCmd && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn .2s' }}>
-          <div onClick={() => { setSelectedCmd(null); setCmdItems([]) }} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
-          <div style={{ position: 'relative', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '90vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
-            </div>
+      {/* MODAL DÉTAIL GROUPE */}
+      {selectedGroup && (
+        <ModalDetailGroupe
+          group={selectedGroup}
+          groupItems={groupItems}
+          loadingItems={loadingItems}
+          updating={updating}
+          restaurant={restaurant}
+          onClose={() => { setSelectedGroup(null); setGroupItems({}) }}
+          onChangerStatut={changerStatut}
+          onSupprimerItem={supprimerItem}
+          onAnnuler={annulerCommande}
+          onCloturerTout={cloturerTout}
+          onTicket={() => ouvrirTicket(selectedGroup)}
+          formatCFA={formatCFA}
+          getTemps={getTemps}
+        />
+      )}
 
-            {/* Header modal */}
-            <div style={{ padding: '10px 18px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>Table {selectedCmd.tables?.numero}</div>
-                <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>{selectedCmd.tables?.zone || 'Salle'} • {getTemps(selectedCmd.created_at)}</div>
+      {/* MODAL TICKET CAISSE */}
+      {showTicket && ticketData && (
+        <TicketCaisse data={ticketData} onClose={() => setShowTicket(false)} />
+      )}
+    </div>
+  )
+}
+
+// ─── MODAL DÉTAIL GROUPE ─────────────────────────────────────────────────────
+function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaurant, onClose, onChangerStatut, onSupprimerItem, onAnnuler, onCloturerTout, onTicket, formatCFA, getTemps }) {
+  const [showEncaisser, setShowEncaisser] = useState(false)
+  const [modePaiement, setModePaiement] = useState('')
+
+  const totalGroupe = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
+  const toutesServies = group.cmds.every(c => c.statut === 'servi')
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn .2s' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
+      <div style={{ position: 'relative', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: '10px 18px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>Table {group.table?.numero}</div>
+            <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>
+              {group.table?.zone || 'Salle'} • {group.cmds.length} commande{group.cmds.length > 1 ? 's' : ''} • {formatCFA(totalGroupe)}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onTicket} style={{ background: C.grayLight, border: 'none', borderRadius: 9, padding: '7px 10px', fontSize: 12, fontWeight: 600, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>
+              🖨️ Ticket
+            </button>
+            <button onClick={onClose} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        </div>
+
+        {/* Commandes */}
+        <div style={{ overflowY: 'auto', flex: 1, padding: '12px 18px' }}>
+          {loadingItems ? (
+            <div style={{ textAlign: 'center', padding: '30px', color: C.gray }}>Chargement...</div>
+          ) : group.cmds.map((cmd, idx) => {
+            const cfg = STATUT_CFG[cmd.statut]
+            const items = groupItems[cmd.id] || []
+            return (
+              <div key={cmd.id} style={{ marginBottom: 16, background: C.grayLight, borderRadius: 14, overflow: 'hidden' }}>
+                {/* En-tête commande */}
+                <div style={{ background: cfg?.bg || '#F5F5F5', padding: '9px 13px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 16 }}>{cfg?.icon}</span>
+                    <div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: cfg?.color || C.gray }}>
+                        Commande {idx + 1} — {cfg?.label}
+                      </span>
+                      <div style={{ fontSize: 10, color: C.gray }}>{formatCFA(cmd.total)}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    {cfg?.next && (
+                      <button onClick={() => onChangerStatut(cmd, cfg.next)} disabled={updating}
+                        style={{ background: cfg.color, border: 'none', borderRadius: 7, padding: '5px 10px', fontSize: 10, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
+                        {cfg.nextLabel}
+                      </button>
+                    )}
+                    <button onClick={() => onAnnuler(cmd)}
+                      style={{ background: '#FFEBEE', border: 'none', borderRadius: 7, width: 26, height: 26, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red }}>✕</button>
+                  </div>
+                </div>
+                {/* Articles */}
+                <div style={{ padding: '8px 13px' }}>
+                  {items.map(item => (
+                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid rgba(0,0,0,.05)' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: C.dark }}>{item.nom_plat}</div>
+                        <div style={{ fontSize: 10, color: C.gray }}>×{item.quantite} • {item.prix_unitaire.toLocaleString()} F/u</div>
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.dark }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
+                      {cmd.statut === 'en_attente' && (
+                        <button onClick={() => onSupprimerItem(item.id, cmd.id)}
+                          style={{ background: '#FFEBEE', border: 'none', borderRadius: 6, width: 24, height: 24, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red }}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {(() => { const cfg = STATUT_CFG[selectedCmd.statut]; return cfg ? <div style={{ background: cfg.bg, color: cfg.color, borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 700 }}>{cfg.icon} {cfg.label}</div> : null })()}
-                <button onClick={() => { setSelectedCmd(null); setCmdItems([]) }} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+            <span style={{ fontSize: 13, color: C.gray }}>Total général</span>
+            <span style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{formatCFA(totalGroupe)}</span>
+          </div>
+
+          {!showEncaisser ? (
+            <button onClick={() => setShowEncaisser(true)} disabled={!toutesServies}
+              style={{ width: '100%', background: toutesServies ? C.green : C.grayLight, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: toutesServies ? '#fff' : C.gray, cursor: toutesServies ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
+              {toutesServies ? '💳 Encaisser et clôturer' : '⏳ En attente que tout soit servi'}
+            </button>
+          ) : (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Mode de paiement</div>
+              {MODES_PAIEMENT.map(m => (
+                <button key={m.id} onClick={() => setModePaiement(m.id)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: `2px solid ${modePaiement === m.id ? C.primary : C.border}`, background: modePaiement === m.id ? C.primaryLight : C.white, marginBottom: 7, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <span style={{ fontSize: 18 }}>{m.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{m.label}</span>
+                  {modePaiement === m.id && <span style={{ marginLeft: 'auto', color: C.primary }}>✓</span>}
+                </button>
+              ))}
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button onClick={() => setShowEncaisser(false)} style={{ flex: 1, background: C.grayLight, border: 'none', borderRadius: 13, padding: '12px', fontSize: 13, fontWeight: 700, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>Retour</button>
+                <button onClick={() => { onCloturerTout(group, modePaiement); onTicket() }} disabled={!modePaiement || updating}
+                  style={{ flex: 2, background: modePaiement ? C.primary : C.grayLight, border: 'none', borderRadius: 13, padding: '12px', fontSize: 13, fontWeight: 700, color: modePaiement ? '#fff' : C.gray, cursor: modePaiement ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
+                  {updating ? '...' : '✅ Confirmer et clôturer'}
+                </button>
               </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── TICKET CAISSE 80MM ───────────────────────────────────────────────────────
+function TicketCaisse({ data, onClose }) {
+  const { group, allItems, total, modePaiement, restaurant, date } = data
+  const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement)
+
+  // Grouper items identiques
+  const lignes = allItems.reduce((acc, item) => {
+    const key = item.nom_plat
+    if (acc[key]) { acc[key].quantite += item.quantite; acc[key].total += item.prix_unitaire * item.quantite }
+    else acc[key] = { nom: item.nom_plat, quantite: item.quantite, prix: item.prix_unitaire, total: item.prix_unitaire * item.quantite }
+    return acc
+  }, {})
+
+  function imprimer() { window.print() }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }}>
+      <div style={{ width: '100%', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
+        </div>
+        <div className="no-print" style={{ padding: '10px 18px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>🖨️ Ticket de caisse</div>
+          <button onClick={onClose} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, padding: '16px 18px' }}>
+          {/* Ticket visuel */}
+          <div id="ticket-print" style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6, maxWidth: 300, margin: '0 auto', background: '#fff', padding: '16px' }}>
+            <div style={{ textAlign: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 16, fontWeight: 800 }}>{restaurant?.nom?.toUpperCase()}</div>
+              {restaurant?.ville && <div>{restaurant.ville}</div>}
+              {restaurant?.telephone && <div>{restaurant.telephone}</div>}
+              <div style={{ borderTop: '1px dashed #ccc', margin: '8px 0' }}></div>
+              <div>{dateStr}</div>
+              <div>Table {group.table?.numero} — {group.table?.zone || 'Salle'}</div>
+              {group.cmds.length > 1 && <div>{group.cmds.length} commandes groupées</div>}
+              <div style={{ borderTop: '1px dashed #ccc', margin: '8px 0' }}></div>
             </div>
 
             {/* Articles */}
-            <div style={{ overflowY: 'auto', flex: 1, padding: '12px 18px' }}>
-              {loadingItems ? (
-                <div style={{ textAlign: 'center', padding: '20px', color: C.gray, fontSize: 13 }}>Chargement...</div>
-              ) : cmdItems.map(item => (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{item.nom_plat}</div>
-                    <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>×{item.quantite} • {item.prix_unitaire.toLocaleString()} F/u</div>
-                    {item.note && <div style={{ fontSize: 11, color: C.primary, marginTop: 2 }}>📝 {item.note}</div>}
-                  </div>
-                  <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
-                    {selectedCmd.statut === 'en_attente' && (
-                      <button onClick={() => supprimerItem(item.id)}
-                        style={{ background: '#FFEBEE', border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red }}>✕</button>
-                    )}
-                  </div>
+            {Object.values(lignes).map((l, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{l.nom}</div>
+                  <div style={{ fontSize: 11, color: '#666' }}>  {l.quantite} x {l.prix.toLocaleString()}</div>
                 </div>
-              ))}
-            </div>
+                <div style={{ fontWeight: 700, whiteSpace: 'nowrap', marginLeft: 8 }}>{l.total.toLocaleString()} F</div>
+              </div>
+            ))}
 
-            {/* Footer actions */}
-            <div style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-                <span style={{ fontSize: 13, color: C.gray }}>Total</span>
-                <span style={{ fontSize: 17, fontWeight: 800, color: C.dark }}>{formatCFA(selectedCmd.total)}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button className="btn" onClick={() => annulerCommande(selectedCmd)}
-                  style={{ flex: 1, background: '#FFEBEE', border: 'none', borderRadius: 13, padding: '13px', fontSize: 13, fontWeight: 700, color: C.red, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  ✕ Annuler
-                </button>
-                {STATUT_CFG[selectedCmd.statut]?.next && (
-                  <button className="btn" onClick={() => changerStatut(selectedCmd, STATUT_CFG[selectedCmd.statut].next)} disabled={updating}
-                    style={{ flex: 2, background: STATUT_CFG[selectedCmd.statut]?.color || C.primary, border: 'none', borderRadius: 13, padding: '13px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: updating ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
-                    {updating ? '...' : `${STATUT_CFG[selectedCmd.statut]?.nextLabel} →`}
-                  </button>
-                )}
-              </div>
+            <div style={{ borderTop: '1px dashed #ccc', margin: '10px 0' }}></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 14 }}>
+              <span>TOTAL</span>
+              <span>{total.toLocaleString()} FCFA</span>
+            </div>
+            {modePaie && (
+              <div style={{ marginTop: 6, fontSize: 11 }}>Paiement : {modePaie.icon} {modePaie.label}</div>
+            )}
+            <div style={{ borderTop: '1px dashed #ccc', margin: '10px 0' }}></div>
+            <div style={{ textAlign: 'center', fontSize: 11 }}>
+              <div>Merci de votre visite !</div>
+              <div style={{ marginTop: 4, color: '#aaa' }}>MaquisApp • maquisapp-xi.vercel.app</div>
             </div>
           </div>
         </div>
-      )}
+
+        <div className="no-print" style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}` }}>
+          <button onClick={imprimer}
+            style={{ width: '100%', background: C.dark, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+            🖨️ Imprimer le ticket
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
