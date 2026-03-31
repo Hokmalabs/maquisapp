@@ -25,6 +25,41 @@ const MODES_PAIEMENT = [
   { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
 ]
 
+function jouerSon(type) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+
+    if (type === 'serveur') {
+      osc.frequency.value = 880
+      osc.start()
+      osc.stop(ctx.currentTime + 0.3)
+    } else if (type === 'addition') {
+      osc.frequency.value = 440
+      osc.start()
+      osc.stop(ctx.currentTime + 0.2)
+      setTimeout(() => {
+        const ctx2 = new (window.AudioContext || window.webkitAudioContext)()
+        const osc2 = ctx2.createOscillator()
+        const gain2 = ctx2.createGain()
+        osc2.connect(gain2)
+        gain2.connect(ctx2.destination)
+        gain2.gain.setValueAtTime(0.3, ctx2.currentTime)
+        osc2.frequency.value = 440
+        osc2.start()
+        osc2.stop(ctx2.currentTime + 0.2)
+      }, 300)
+    }
+  } catch (e) {
+    console.log('Audio non supporté')
+  }
+}
+
 export default function CommandesPage() {
   const router = useRouter()
   const [restaurant, setRestaurant] = useState(null)
@@ -37,6 +72,9 @@ export default function CommandesPage() {
   const [updating, setUpdating]           = useState(false)
   const [showTicket, setShowTicket]       = useState(false)
   const [ticketData, setTicketData]       = useState(null)
+  const [demandesPaiement, setDemandesPaiement] = useState([])
+  const [showBonCuisine, setShowBonCuisine] = useState(false)
+  const [bonCuisineData, setBonCuisineData] = useState(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -46,7 +84,27 @@ export default function CommandesPage() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'commandes',
         filter: `restaurant_id=eq.${restaurant.id}`
-      }, () => { refreshCommandes(restaurant.id) })
+      }, (payload) => {
+        // Détecter une demande de paiement (mode_paiement vient d'être renseigné)
+        if (payload.eventType === 'UPDATE' && payload.new?.mode_paiement && !payload.old?.mode_paiement) {
+          jouerSon('addition')
+          const cmdId = payload.new.id
+          supabase.from('commandes').select('*, tables(numero)').eq('id', cmdId).single()
+            .then(({ data: cmd }) => {
+              if (cmd) {
+                setDemandesPaiement(prev => {
+                  if (prev.find(d => d.cmdId === cmdId)) return prev
+                  return [...prev, { tableNumero: cmd.tables?.numero, modePaiement: payload.new.mode_paiement, cmdId }]
+                })
+              }
+            })
+        }
+        refreshCommandes(restaurant.id)
+      })
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'appels_serveur',
+        filter: `restaurant_id=eq.${restaurant.id}`
+      }, () => { jouerSon('serveur') })
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [restaurant])
@@ -240,8 +298,8 @@ export default function CommandesPage() {
         .btn:active { transform: scale(0.97); opacity:.9; }
         @media print {
           body * { visibility: hidden; }
-          #ticket-print, #ticket-print * { visibility: visible; }
-          #ticket-print { position: fixed; left: 0; top: 0; width: 80mm; font-size: 11px; font-family: monospace; }
+          #ticket-print, #ticket-print *, #ticket-cuisine-print, #ticket-cuisine-print * { visibility: visible; }
+          #ticket-print, #ticket-cuisine-print { position: fixed; left: 0; top: 0; width: 80mm; font-size: 11px; font-family: monospace; }
           .no-print { display: none !important; }
         }
       `}</style>
@@ -262,6 +320,20 @@ export default function CommandesPage() {
           </div>
         </div>
       </div>
+
+      {/* BANNIÈRES DEMANDES DE PAIEMENT */}
+      {demandesPaiement.map((d) => {
+        const mode = MODES_PAIEMENT.find(m => m.id === d.modePaiement)
+        return (
+          <div key={d.cmdId} style={{ margin: '8px 16px 0', background: C.primary, borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>
+              🔔 Table {d.tableNumero} demande l'addition — Mode : {mode ? `${mode.icon} ${mode.label}` : d.modePaiement}
+            </span>
+            <button onClick={() => setDemandesPaiement(prev => prev.filter(x => x.cmdId !== d.cmdId))}
+              style={{ background: 'rgba(255,255,255,.25)', border: 'none', borderRadius: 7, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
+          </div>
+        )
+      })}
 
       {/* FILTRES */}
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 16px 0' }}>
@@ -384,6 +456,10 @@ export default function CommandesPage() {
           onAnnuler={annulerCommande}
           onCloturerTout={cloturerTout}
           onTicket={preparerEtOuvrirTicket}
+          onAfficherBonCuisine={(cmd, items) => {
+            setBonCuisineData({ cmd, items, table: selectedGroup.table })
+            setShowBonCuisine(true)
+          }}
           formatCFA={formatCFA}
           getTemps={getTemps}
         />
@@ -392,11 +468,25 @@ export default function CommandesPage() {
       {showTicket && ticketData && (
         <TicketCaisse data={ticketData} onClose={() => setShowTicket(false)} />
       )}
+
+      {showBonCuisine && bonCuisineData && (
+        <BonCuisine
+          data={bonCuisineData}
+          restaurant={restaurant}
+          onImprimer={() => window.print()}
+          onIgnorer={() => {
+            setShowBonCuisine(false)
+            changerStatut(bonCuisineData.cmd, 'en_preparation')
+            setBonCuisineData(null)
+          }}
+          onClose={() => { setShowBonCuisine(false); setBonCuisineData(null) }}
+        />
+      )}
     </div>
   )
 }
 
-function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaurant, onClose, onChangerStatut, onSupprimerItem, onAnnuler, onCloturerTout, onTicket, formatCFA, getTemps }) {
+function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaurant, onClose, onChangerStatut, onSupprimerItem, onAnnuler, onCloturerTout, onTicket, onAfficherBonCuisine, formatCFA, getTemps }) {
   const [showEncaisser, setShowEncaisser] = useState(false)
   const [modePaiement, setModePaiement] = useState('')
 
@@ -460,7 +550,11 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
                   </div>
                   <div style={{ display: 'flex', gap: 5 }}>
                     {cfg?.next && (
-                      <button onClick={() => onChangerStatut(cmd, cfg.next)} disabled={updating}
+                      <button
+                        onClick={() => cfg.next === 'en_preparation'
+                          ? onAfficherBonCuisine(cmd, groupItems[cmd.id] || [])
+                          : onChangerStatut(cmd, cfg.next)}
+                        disabled={updating}
                         style={{ background: cfg.color, border: 'none', borderRadius: 7, padding: '5px 10px', fontSize: 10, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
                         {cfg.nextLabel}
                       </button>
@@ -590,6 +684,55 @@ function TicketCaisse({ data, onClose }) {
           <button onClick={() => window.print()}
             style={{ width: '100%', background: C.dark, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
             🖨️ Imprimer le ticket
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BonCuisine({ data, restaurant, onImprimer, onIgnorer, onClose }) {
+  const { items, table } = data
+  const now = new Date()
+  const dateStr = now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const heureStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }}>
+      <div style={{ width: '100%', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
+        </div>
+        <div className="no-print" style={{ padding: '10px 18px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>👨‍🍳 Bon de commande cuisine</div>
+          <button onClick={onClose} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
+        </div>
+        <div style={{ overflowY: 'auto', flex: 1, padding: '16px 18px' }}>
+          <div id="ticket-cuisine-print" style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.8, maxWidth: 300, margin: '0 auto', background: '#fff', padding: '16px', border: '1px solid #eee', borderRadius: 8 }}>
+            <div style={{ textAlign: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 800 }}>╔══════════════════════╗</div>
+              <div style={{ fontWeight: 800 }}>   BON DE COMMANDE</div>
+              <div style={{ fontWeight: 700 }}>   {restaurant?.nom?.toUpperCase()}</div>
+              <div>   {dateStr} {heureStr}</div>
+              <div style={{ fontWeight: 700 }}>   Table {table?.numero}</div>
+              <div style={{ fontSize: 14, fontWeight: 800 }}>╠══════════════════════╣</div>
+            </div>
+            {items.map((item, i) => (
+              <div key={i} style={{ padding: '2px 0', fontWeight: 600 }}>
+                {item.quantite}x {item.nom_plat}
+              </div>
+            ))}
+            <div style={{ textAlign: 'center', marginTop: 8, fontSize: 14, fontWeight: 800 }}>╚══════════════════════╝</div>
+          </div>
+        </div>
+        <div className="no-print" style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 10 }}>
+          <button onClick={onImprimer}
+            style={{ flex: 1, background: C.dark, border: 'none', borderRadius: 14, padding: '13px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+            🖨️ Imprimer en cuisine
+          </button>
+          <button onClick={onIgnorer}
+            style={{ flex: 1, background: C.grayLight, border: 'none', borderRadius: 14, padding: '13px', fontSize: 13, fontWeight: 700, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Ignorer et continuer
           </button>
         </div>
       </div>

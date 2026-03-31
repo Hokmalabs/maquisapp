@@ -48,6 +48,7 @@ export default function MenuPage({ params }) {
   const [recuData, setRecuData]       = useState(null);
   const [appelEnvoye, setAppelEnvoye] = useState(false);
   const [modePaiement, setModePaiement] = useState('');
+  const [sending, setSending] = useState(false);
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
   const catRefs = useRef({});
@@ -233,21 +234,25 @@ export default function MenuPage({ params }) {
   }
 
   async function envoyerCommande() {
-    if (!panier.length || !restaurant || !table) return;
-    const { data: cmd, error } = await supabase
-      .from('commandes')
-      .insert({ restaurant_id: restaurant.id, table_id: table.id, statut: 'en_attente', total: totalPanier, paye: false })
-      .select().single();
-    if (error || !cmd) return;
-    await supabase.from('commande_items').insert(
-      panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, quantite: i.quantite, note: i.note || '' }))
-    );
-    setPanier([]);
-    setShowPanierModal(false);
-    // Ajouter la commande et ses items directement sans recharger tout
-    setCommandes(prev => [...prev, cmd]);
-    const { data: newItems } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
-    setAllItems(prev => ({ ...prev, [cmd.id]: newItems || [] }));
+    if (sending || !panier.length || !restaurant || !table) return;
+    setSending(true);
+    try {
+      const { data: cmd, error } = await supabase
+        .from('commandes')
+        .insert({ restaurant_id: restaurant.id, table_id: table.id, statut: 'en_attente', total: totalPanier, paye: false })
+        .select().single();
+      if (error || !cmd) return;
+      await supabase.from('commande_items').insert(
+        panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, quantite: i.quantite, note: i.note || '' }))
+      );
+      setPanier([]);
+      setShowPanierModal(false);
+      setCommandes(prev => [...prev, cmd]);
+      const { data: newItems } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
+      setAllItems(prev => ({ ...prev, [cmd.id]: newItems || [] }));
+    } finally {
+      setSending(false);
+    }
   }
 
   async function demanderPaiement() {
@@ -443,7 +448,7 @@ export default function MenuPage({ params }) {
           isNouvelle={commandes.length > 0}
           onClose={() => setShowPanierModal(false)}
           onAdd={ajouterAuPanier} onRemove={retirerDuPanier}
-          onCommander={envoyerCommande} />
+          onCommander={envoyerCommande} sending={sending} />
       )}
       {platDetail && (
         <ModalPlatDetail plat={platDetail} quantite={quantiteDans(platDetail.id)}
@@ -575,7 +580,7 @@ function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
   );
 }
 
-function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemove, onCommander }) {
+function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemove, onCommander, sending }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
@@ -613,9 +618,9 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
             <span style={{ fontSize: 13, color: '#8A8A9A' }}>Total</span>
             <span style={{ fontSize: 17, fontWeight: 800, color: '#1A1A2E' }}>{total.toLocaleString()} FCFA</span>
           </div>
-          <button className="btn-cmd" onClick={onCommander}
-            style={{ width: '100%', background: '#FF6B35', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-            ✅ {isNouvelle ? 'Envoyer cette commande' : 'Envoyer la commande'}
+          <button className="btn-cmd" onClick={onCommander} disabled={sending}
+            style={{ width: '100%', background: sending ? '#ccc' : '#FF6B35', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+            {sending ? '⏳ Envoi en cours...' : (isNouvelle ? '✅ Envoyer cette commande' : '✅ Envoyer la commande')}
           </button>
         </div>
       </div>

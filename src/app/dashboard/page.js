@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [commandes, setCommandes] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCmdManuelle, setShowCmdManuelle] = useState(false)
+  const [avertissementExpiration, setAvertissementExpiration] = useState(null)
 
   // Commande manuelle
   const [tables, setTables] = useState([])
@@ -69,6 +70,24 @@ export default function DashboardPage() {
     const resto = profile.restaurants
     setRestaurant(resto)
     setRestaurantId(profile.restaurant_id)
+
+    // ── Vérification abonnement ────────────────────────────────────────
+    const maintenant = new Date()
+    const fin = resto.abonnement_fin ? new Date(resto.abonnement_fin) : null
+    if (
+      resto.abonnement_statut === 'expire' ||
+      resto.abonnement_statut === 'suspendu' ||
+      (resto.abonnement_statut === 'essai' && fin && fin < maintenant)
+    ) {
+      router.push('/abonnement')
+      return
+    }
+    if (fin) {
+      const joursRestants = Math.ceil((fin - maintenant) / (1000 * 60 * 60 * 24))
+      if (joursRestants <= 3 && joursRestants > 0) {
+        setAvertissementExpiration(joursRestants)
+      }
+    }
 
     const rid = profile.restaurant_id
     const today = new Date().toISOString().split('T')[0]
@@ -220,6 +239,16 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* ── BANNIÈRE EXPIRATION ──────────────────────────────────────── */}
+      {avertissementExpiration && (
+        <div style={{ margin: '10px 16px 0', background: '#FFF8E1', border: '1.5px solid #FFB800', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#7A5C00' }}>
+            ⚠️ Votre essai expire dans {avertissementExpiration} jour{avertissementExpiration > 1 ? 's' : ''} — <a href="/abonnement" style={{ color: '#FF6B35', fontWeight: 700 }}>Souscrire maintenant</a>
+          </span>
+          <button onClick={() => setAvertissementExpiration(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#7A5C00', flexShrink: 0 }}>✕</button>
+        </div>
+      )}
 
       {/* ── HERO ─────────────────────────────────────────────────────── */}
       <div style={{ margin: '14px 16px 0', borderRadius: 18, background: 'linear-gradient(135deg, #FF6B35 0%, #FF8C42 60%, #FFB347 100%)', padding: '18px', position: 'relative', overflow: 'hidden' }}>

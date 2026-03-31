@@ -14,25 +14,39 @@ function CallbackHandler() {
 
   async function handleCallback() {
     try {
-      // Attendre que Supabase traite le hash OAuth de l'URL
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      // Laisser Supabase parser le hash OAuth (#access_token=...) de l'URL
+      await new Promise(resolve => setTimeout(resolve, 500))
 
-      // Récupérer la session
-      const { data: { session }, error } = await supabase.auth.getSession()
+      let resolved = false
 
-      if (error || !session) {
-        // Essayer une deuxième fois après un délai
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        const { data: { session: session2 } } = await supabase.auth.getSession()
-        if (!session2) {
-          setStatus('Session introuvable, redirection...')
-          router.push('/auth/login')
-          return
+      // Écouter l'événement SIGNED_IN via onAuthStateChange
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (resolved) return
+        if (event === 'SIGNED_IN' && session) {
+          resolved = true
+          subscription.unsubscribe()
+          await processSession(session)
         }
-        return processSession(session2)
+      })
+
+      // Fallback : vérifier si session déjà disponible
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session && !resolved) {
+        resolved = true
+        subscription.unsubscribe()
+        await processSession(session)
+        return
       }
 
-      await processSession(session)
+      // Timeout de sécurité si SIGNED_IN n'arrive pas
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true
+          subscription.unsubscribe()
+          setStatus('Session introuvable, redirection...')
+          router.push('/auth/login')
+        }
+      }, 5000)
     } catch (err) {
       console.error('Callback error:', err)
       setStatus('Erreur, redirection...')
@@ -75,7 +89,12 @@ function CallbackHandler() {
 
     const { data: restaurant, error: restoError } = await supabase
       .from('restaurants')
-      .insert({ nom: nomRestaurant, slug, email: user.email, ville: 'Abidjan' })
+      .insert({
+        nom: nomRestaurant, slug, email: user.email, ville: 'Abidjan',
+        abonnement_statut: 'essai',
+        abonnement_fin: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        abonnement_plan: null,
+      })
       .select().single()
 
     if (restoError) {

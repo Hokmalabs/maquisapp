@@ -56,7 +56,12 @@ export default function RegisterPage() {
       const userId = authData.user.id
       const slug = generateSlug(form.nom_restaurant)
       const { data: restaurant, error: restoError } = await supabase.from('restaurants')
-        .insert({ nom: form.nom_restaurant, slug, email: form.email, telephone: form.telephone, ville: form.ville })
+        .insert({
+          nom: form.nom_restaurant, slug, email: form.email, telephone: form.telephone, ville: form.ville,
+          abonnement_statut: 'essai',
+          abonnement_fin: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          abonnement_plan: null,
+        })
         .select().single()
       if (restoError) throw restoError
       const { error: profileError } = await supabase.from('profiles')
