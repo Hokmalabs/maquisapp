@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
-export default function AuthCallback() {
+function CallbackHandler() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [status, setStatus] = useState('Connexion en cours...')
@@ -14,7 +14,6 @@ export default function AuthCallback() {
 
   async function handleCallback() {
     try {
-      // Récupérer la session après redirect OAuth
       const { data: { session }, error } = await supabase.auth.getSession()
       if (error || !session) {
         setStatus('Erreur de connexion')
@@ -25,7 +24,6 @@ export default function AuthCallback() {
       const user = session.user
       const isRegister = searchParams.get('register') === 'true'
 
-      // Vérifier si un profil existe déjà
       const { data: profile } = await supabase
         .from('profiles')
         .select('*, restaurants(*)')
@@ -33,14 +31,11 @@ export default function AuthCallback() {
         .single()
 
       if (profile?.restaurant_id) {
-        // Profil existe → aller au dashboard
         setStatus('Bienvenue ! Redirection...')
         router.push('/dashboard')
         return
       }
 
-      // Pas de profil → c'est un nouvel utilisateur Google
-      // Si inscription, créer le restaurant avec les infos Google
       if (isRegister || !profile) {
         setStatus('Création de votre espace...')
 
@@ -100,5 +95,17 @@ export default function AuthCallback() {
       <div style={{ width: 36, height: 36, border: '3px solid rgba(255,107,53,.2)', borderTop: '3px solid #FF6B35', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
       <div style={{ fontSize: 14, color: 'rgba(255,255,255,.6)', fontWeight: 500 }}>{status}</div>
     </div>
+  )
+}
+
+export default function AuthCallback() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', background: '#0D0D0D', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.6)' }}>Chargement...</div>
+      </div>
+    }>
+      <CallbackHandler />
+    </Suspense>
   )
 }
