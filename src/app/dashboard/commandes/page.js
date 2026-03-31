@@ -31,9 +31,8 @@ export default function CommandesPage() {
   const [commandes, setCommandes]   = useState([])
   const [loading, setLoading]       = useState(true)
   const [filter, setFilter]         = useState('all')
-  // selectedGroup = { table, cmds, items }
   const [selectedGroup, setSelectedGroup] = useState(null)
-  const [groupItems, setGroupItems]       = useState({}) // { cmdId: [items] }
+  const [groupItems, setGroupItems]       = useState({})
   const [loadingItems, setLoadingItems]   = useState(false)
   const [updating, setUpdating]           = useState(false)
   const [showTicket, setShowTicket]       = useState(false)
@@ -44,9 +43,10 @@ export default function CommandesPage() {
   useEffect(() => {
     if (!restaurant) return
     const ch = supabase.channel('commandes-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'commandes', filter: `restaurant_id=eq.${restaurant.id}` }, () => {
-        refreshCommandes(restaurant.id)
-      })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'commandes',
+        filter: `restaurant_id=eq.${restaurant.id}`
+      }, () => { refreshCommandes(restaurant.id) })
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [restaurant])
@@ -76,12 +76,11 @@ export default function CommandesPage() {
     setCommandes(data || [])
   }
 
-  // ─── GROUPEMENT PAR TABLE ─────────────────────────────────────────────────
   function grouperParTable(cmds) {
     const map = {}
     for (const cmd of cmds) {
       const key = cmd.table_id
-      if (!map[key]) map[key] = { table: cmd.tables, cmds: [] }
+      if (!map[key]) map[key] = { table: cmd.tables, tableId: cmd.table_id, cmds: [] }
       map[key].cmds.push(cmd)
     }
     return Object.values(map)
@@ -90,11 +89,12 @@ export default function CommandesPage() {
   async function ouvrirGroupe(group) {
     setLoadingItems(true)
     setSelectedGroup(group)
+    // ─── FIX BUG 3 : charger tous les items en une seule fois ────────────────
     const items = {}
-    for (const cmd of group.cmds) {
+    await Promise.all(group.cmds.map(async (cmd) => {
       const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id)
       items[cmd.id] = data || []
-    }
+    }))
     setGroupItems(items)
     setLoadingItems(false)
   }
@@ -107,9 +107,8 @@ export default function CommandesPage() {
     await supabase.from('commandes').update(update).eq('id', cmd.id)
 
     if (newStatut === 'cloture') {
-      // Vérifier s'il reste des commandes actives sur cette table
       const autresCmds = selectedGroup.cmds.filter(c => c.id !== cmd.id)
-      const toutesTerminees = autresCmds.every(c => c.statut === 'cloture' || c.statut === 'annule')
+      const toutesTerminees = autresCmds.every(c => ['cloture','annule'].includes(c.statut))
       if (toutesTerminees || autresCmds.length === 0) {
         await supabase.from('tables').update({ statut: 'libre' }).eq('id', cmd.table_id)
       }
@@ -117,7 +116,7 @@ export default function CommandesPage() {
 
     setUpdating(false)
     await refreshCommandes(restaurant.id)
-    // Rafraîchir le groupe sélectionné
+
     if (selectedGroup) {
       const { data: cmdsUpdated } = await supabase
         .from('commandes')
@@ -137,26 +136,34 @@ export default function CommandesPage() {
     setUpdating(true)
     for (const cmd of group.cmds) {
       if (!['cloture', 'annule'].includes(cmd.statut)) {
-        await supabase.from('commandes').update({ statut: 'cloture', mode_paiement: modePaiement }).eq('id', cmd.id)
+        await supabase.from('commandes')
+          .update({ statut: 'cloture', mode_paiement: modePaiement })
+          .eq('id', cmd.id)
       }
     }
-    await supabase.from('tables').update({ statut: 'libre' }).eq('id', group.table?.id || group.cmds[0].table_id)
+    const tableId = group.tableId || group.table?.id || group.cmds[0]?.table_id
+    if (tableId) {
+      await supabase.from('tables').update({ statut: 'libre' }).eq('id', tableId)
+    }
     setUpdating(false)
-    setSelectedGroup(null)
-    setGroupItems({})
     await refreshCommandes(restaurant.id)
   }
 
+  // ─── FIX BUG 3 : supprimer item sans recharger depuis la DB ────────────────
   async function supprimerItem(itemId, cmdId) {
     await supabase.from('commande_items').delete().eq('id', itemId)
+    // Mettre à jour le state local directement (pas de rechargement)
     const newItems = (groupItems[cmdId] || []).filter(i => i.id !== itemId)
     const newTotal = newItems.reduce((s, i) => s + i.prix_unitaire * i.quantite, 0)
     await supabase.from('commandes').update({ total: newTotal }).eq('id', cmdId)
+    // Mettre à jour groupItems localement
     setGroupItems(prev => ({ ...prev, [cmdId]: newItems }))
+    // Mettre à jour le total dans selectedGroup localement
     setSelectedGroup(prev => ({
       ...prev,
       cmds: prev.cmds.map(c => c.id === cmdId ? { ...c, total: newTotal } : c)
     }))
+    // NE PAS appeler refreshCommandes ici → c'est ce qui causait le bug
   }
 
   async function annulerCommande(cmd) {
@@ -172,11 +179,12 @@ export default function CommandesPage() {
     await refreshCommandes(restaurant.id)
   }
 
-  function ouvrirTicket(group) {
+  // ─── FIX BUG 5 : capturer les données du ticket AVANT de fermer le modal ──
+  function preparerEtOuvrirTicket(group, itemsSnapshot) {
     const allItems = []
     for (const cmd of group.cmds) {
-      const items = groupItems[cmd.id] || []
-      allItems.push(...items.map(i => ({ ...i, cmdStatut: cmd.statut })))
+      const items = itemsSnapshot[cmd.id] || []
+      allItems.push(...items)
     }
     const total = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
     const modePaiement = group.cmds[group.cmds.length - 1]?.mode_paiement || ''
@@ -199,13 +207,9 @@ export default function CommandesPage() {
   }
 
   const formatCFA = (n) => new Intl.NumberFormat('fr-FR').format(n || 0) + ' F'
-
   const groupes = grouperParTable(commandes)
-  const groupesFiltres = filter === 'all'
-    ? groupes
-    : groupes.filter(g => g.cmds.some(c => c.statut === filter))
+  const groupesFiltres = filter === 'all' ? groupes : groupes.filter(g => g.cmds.some(c => c.statut === filter))
 
-  // Statut dominant du groupe (le moins avancé)
   function statutDominant(cmds) {
     const ordre = ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']
     for (const s of ordre) {
@@ -275,7 +279,7 @@ export default function CommandesPage() {
         ))}
       </div>
 
-      {/* LISTE GROUPÉE PAR TABLE */}
+      {/* LISTE GROUPÉE */}
       <div style={{ padding: '12px 16px 0' }}>
         {groupesFiltres.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: C.gray }}>
@@ -291,7 +295,6 @@ export default function CommandesPage() {
 
           return (
             <div key={gi} className="cmd-card" style={{ background: C.white, borderRadius: 16, boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 12, overflow: 'hidden', transition: 'transform .15s', borderLeft: `4px solid ${cfg.color}` }}>
-              {/* En-tête table */}
               <div style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => ouvrirGroupe(group)}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -311,8 +314,6 @@ export default function CommandesPage() {
                     <div style={{ fontSize: 10, color: getTempsColor(plusAncienne), fontWeight: 600, marginTop: 2 }}>⏱ {getTemps(plusAncienne)}</div>
                   </div>
                 </div>
-
-                {/* Mini liste des commandes du groupe */}
                 {group.cmds.length > 1 && (
                   <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                     {group.cmds.map((c, i) => {
@@ -325,7 +326,6 @@ export default function CommandesPage() {
                     })}
                   </div>
                 )}
-
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
                   <div style={{ background: cfg.bg, color: cfg.color, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>{cfg.label}</div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -338,7 +338,6 @@ export default function CommandesPage() {
                     {!toutesServies && cfg.next && (
                       <button className="btn" onClick={e => {
                         e.stopPropagation()
-                        // Avancer toutes les commandes en_attente du groupe
                         const aAvancer = group.cmds.filter(c => c.statut === statut)
                         aAvancer.forEach(c => changerStatut(c, cfg.next))
                       }}
@@ -372,7 +371,6 @@ export default function CommandesPage() {
         ))}
       </div>
 
-      {/* MODAL DÉTAIL GROUPE */}
       {selectedGroup && (
         <ModalDetailGroupe
           group={selectedGroup}
@@ -385,13 +383,12 @@ export default function CommandesPage() {
           onSupprimerItem={supprimerItem}
           onAnnuler={annulerCommande}
           onCloturerTout={cloturerTout}
-          onTicket={() => ouvrirTicket(selectedGroup)}
+          onTicket={preparerEtOuvrirTicket}
           formatCFA={formatCFA}
           getTemps={getTemps}
         />
       )}
 
-      {/* MODAL TICKET CAISSE */}
       {showTicket && ticketData && (
         <TicketCaisse data={ticketData} onClose={() => setShowTicket(false)} />
       )}
@@ -399,13 +396,26 @@ export default function CommandesPage() {
   )
 }
 
-// ─── MODAL DÉTAIL GROUPE ─────────────────────────────────────────────────────
 function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaurant, onClose, onChangerStatut, onSupprimerItem, onAnnuler, onCloturerTout, onTicket, formatCFA, getTemps }) {
   const [showEncaisser, setShowEncaisser] = useState(false)
   const [modePaiement, setModePaiement] = useState('')
 
   const totalGroupe = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
   const toutesServies = group.cmds.every(c => c.statut === 'servi')
+
+  // ─── FIX BUG 5 : passer groupItems au ticket AVANT de fermer ─────────────
+  async function handleCloturerEtTicket() {
+    if (!modePaiement || updating) return
+    // Capturer les items actuels avant clôture
+    const itemsSnapshot = { ...groupItems }
+    const groupSnapshot = { ...group, cmds: [...group.cmds] }
+    // Clôturer
+    await onCloturerTout(group, modePaiement)
+    // Fermer le modal
+    onClose()
+    // Ouvrir le ticket avec les données capturées
+    onTicket(groupSnapshot, itemsSnapshot)
+  }
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn .2s' }}>
@@ -414,8 +424,6 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
         <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
           <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
         </div>
-
-        {/* Header */}
         <div style={{ padding: '10px 18px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>Table {group.table?.numero}</div>
@@ -424,14 +432,14 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onTicket} style={{ background: C.grayLight, border: 'none', borderRadius: 9, padding: '7px 10px', fontSize: 12, fontWeight: 600, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => onTicket(group, groupItems)}
+              style={{ background: C.grayLight, border: 'none', borderRadius: 9, padding: '7px 10px', fontSize: 12, fontWeight: 600, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>
               🖨️ Ticket
             </button>
             <button onClick={onClose} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
           </div>
         </div>
 
-        {/* Commandes */}
         <div style={{ overflowY: 'auto', flex: 1, padding: '12px 18px' }}>
           {loadingItems ? (
             <div style={{ textAlign: 'center', padding: '30px', color: C.gray }}>Chargement...</div>
@@ -440,7 +448,6 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
             const items = groupItems[cmd.id] || []
             return (
               <div key={cmd.id} style={{ marginBottom: 16, background: C.grayLight, borderRadius: 14, overflow: 'hidden' }}>
-                {/* En-tête commande */}
                 <div style={{ background: cfg?.bg || '#F5F5F5', padding: '9px 13px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <span style={{ fontSize: 16 }}>{cfg?.icon}</span>
@@ -462,7 +469,6 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
                       style={{ background: '#FFEBEE', border: 'none', borderRadius: 7, width: 26, height: 26, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red }}>✕</button>
                   </div>
                 </div>
-                {/* Articles */}
                 <div style={{ padding: '8px 13px' }}>
                   {items.map(item => (
                     <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid rgba(0,0,0,.05)' }}>
@@ -483,7 +489,6 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
           })}
         </div>
 
-        {/* Footer */}
         <div style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
             <span style={{ fontSize: 13, color: C.gray }}>Total général</span>
@@ -507,8 +512,12 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
                 </button>
               ))}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button onClick={() => setShowEncaisser(false)} style={{ flex: 1, background: C.grayLight, border: 'none', borderRadius: 13, padding: '12px', fontSize: 13, fontWeight: 700, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>Retour</button>
-                <button onClick={() => { onCloturerTout(group, modePaiement); onTicket() }} disabled={!modePaiement || updating}
+                <button onClick={() => setShowEncaisser(false)}
+                  style={{ flex: 1, background: C.grayLight, border: 'none', borderRadius: 13, padding: '12px', fontSize: 13, fontWeight: 700, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Retour
+                </button>
+                {/* ─── FIX BUG 5 : utiliser handleCloturerEtTicket ─────────────── */}
+                <button onClick={handleCloturerEtTicket} disabled={!modePaiement || updating}
                   style={{ flex: 2, background: modePaiement ? C.primary : C.grayLight, border: 'none', borderRadius: 13, padding: '12px', fontSize: 13, fontWeight: 700, color: modePaiement ? '#fff' : C.gray, cursor: modePaiement ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
                   {updating ? '...' : '✅ Confirmer et clôturer'}
                 </button>
@@ -521,21 +530,17 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
   )
 }
 
-// ─── TICKET CAISSE 80MM ───────────────────────────────────────────────────────
 function TicketCaisse({ data, onClose }) {
   const { group, allItems, total, modePaiement, restaurant, date } = data
   const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement)
 
-  // Grouper items identiques
   const lignes = allItems.reduce((acc, item) => {
-    const key = item.nom_plat
+    const key = item.nom_plat + '_' + item.prix_unitaire
     if (acc[key]) { acc[key].quantite += item.quantite; acc[key].total += item.prix_unitaire * item.quantite }
     else acc[key] = { nom: item.nom_plat, quantite: item.quantite, prix: item.prix_unitaire, total: item.prix_unitaire * item.quantite }
     return acc
   }, {})
-
-  function imprimer() { window.print() }
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }}>
@@ -547,9 +552,7 @@ function TicketCaisse({ data, onClose }) {
           <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>🖨️ Ticket de caisse</div>
           <button onClick={onClose} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
         </div>
-
         <div style={{ overflowY: 'auto', flex: 1, padding: '16px 18px' }}>
-          {/* Ticket visuel */}
           <div id="ticket-print" style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6, maxWidth: 300, margin: '0 auto', background: '#fff', padding: '16px' }}>
             <div style={{ textAlign: 'center', marginBottom: 12 }}>
               <div style={{ fontSize: 16, fontWeight: 800 }}>{restaurant?.nom?.toUpperCase()}</div>
@@ -561,8 +564,6 @@ function TicketCaisse({ data, onClose }) {
               {group.cmds.length > 1 && <div>{group.cmds.length} commandes groupées</div>}
               <div style={{ borderTop: '1px dashed #ccc', margin: '8px 0' }}></div>
             </div>
-
-            {/* Articles */}
             {Object.values(lignes).map((l, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                 <div>
@@ -572,15 +573,12 @@ function TicketCaisse({ data, onClose }) {
                 <div style={{ fontWeight: 700, whiteSpace: 'nowrap', marginLeft: 8 }}>{l.total.toLocaleString()} F</div>
               </div>
             ))}
-
             <div style={{ borderTop: '1px dashed #ccc', margin: '10px 0' }}></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 14 }}>
               <span>TOTAL</span>
               <span>{total.toLocaleString()} FCFA</span>
             </div>
-            {modePaie && (
-              <div style={{ marginTop: 6, fontSize: 11 }}>Paiement : {modePaie.icon} {modePaie.label}</div>
-            )}
+            {modePaie && <div style={{ marginTop: 6, fontSize: 11 }}>Paiement : {modePaie.icon} {modePaie.label}</div>}
             <div style={{ borderTop: '1px dashed #ccc', margin: '10px 0' }}></div>
             <div style={{ textAlign: 'center', fontSize: 11 }}>
               <div>Merci de votre visite !</div>
@@ -588,9 +586,8 @@ function TicketCaisse({ data, onClose }) {
             </div>
           </div>
         </div>
-
         <div className="no-print" style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}` }}>
-          <button onClick={imprimer}
+          <button onClick={() => window.print()}
             style={{ width: '100%', background: C.dark, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
             🖨️ Imprimer le ticket
           </button>

@@ -9,84 +9,100 @@ function CallbackHandler() {
   const [status, setStatus] = useState('Connexion en cours...')
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_IN' && session) {
-          const user = session.user
-          const isRegister = searchParams.get('register') === 'true'
-
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*, restaurants(*)')
-            .eq('id', user.id)
-            .single()
-
-          if (profile?.restaurant_id) {
-            setStatus('Bienvenue ! Redirection...')
-            subscription.unsubscribe()
-            router.push('/dashboard')
-            return
-          }
-
-          if (isRegister || !profile) {
-            setStatus('Création de votre espace...')
-
-            const nomRestaurant = user.user_metadata?.full_name
-              ? `Restaurant de ${user.user_metadata.full_name.split(' ')[0]}`
-              : 'Mon Restaurant'
-
-            const slug = nomRestaurant.toLowerCase()
-              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-              .replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
-              + '-' + Math.random().toString(36).substr(2, 5)
-
-            const { data: restaurant, error: restoError } = await supabase
-              .from('restaurants')
-              .insert({
-                nom: nomRestaurant,
-                slug,
-                email: user.email,
-                ville: 'Abidjan',
-              })
-              .select().single()
-
-            if (restoError) {
-              setStatus('Erreur lors de la création')
-              setTimeout(() => router.push('/auth/login'), 2000)
-              subscription.unsubscribe()
-              return
-            }
-
-            const nameParts = (user.user_metadata?.full_name || '').split(' ')
-            await supabase.from('profiles').upsert({
-              id: user.id,
-              restaurant_id: restaurant.id,
-              nom: nameParts[1] || '',
-              prenom: nameParts[0] || '',
-              role: 'gerant',
-            })
-
-            setStatus('Espace créé ! Redirection...')
-            subscription.unsubscribe()
-            router.push('/dashboard')
-          } else {
-            subscription.unsubscribe()
-            router.push('/auth/login')
-          }
-        }
-      }
-    )
-
-    const timeout = setTimeout(() => {
-      subscription.unsubscribe()
-      router.push('/auth/login')
-    }, 5000)
-
-    return () => {
-      subscription.unsubscribe()
-      clearTimeout(timeout)
-    }
+    handleCallback()
   }, [])
+
+  async function handleCallback() {
+    try {
+      // Attendre que Supabase traite le hash OAuth de l'URL
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      // Récupérer la session
+      const { data: { session }, error } = await supabase.auth.getSession()
+
+      if (error || !session) {
+        // Essayer une deuxième fois après un délai
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        const { data: { session: session2 } } = await supabase.auth.getSession()
+        if (!session2) {
+          setStatus('Session introuvable, redirection...')
+          router.push('/auth/login')
+          return
+        }
+        return processSession(session2)
+      }
+
+      await processSession(session)
+    } catch (err) {
+      console.error('Callback error:', err)
+      setStatus('Erreur, redirection...')
+      setTimeout(() => router.push('/auth/login'), 1500)
+    }
+  }
+
+  async function processSession(session) {
+    const user = session.user
+    const isRegister = searchParams.get('register') === 'true'
+
+    setStatus('Vérification du profil...')
+
+    // Vérifier si profil existe
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('restaurant_id')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.restaurant_id) {
+      // Profil existant → dashboard
+      setStatus('Bienvenue ! Redirection...')
+      router.push('/dashboard')
+      return
+    }
+
+    // Nouveau user Google → créer restaurant + profil
+    setStatus('Création de votre espace...')
+
+    const prenom = user.user_metadata?.full_name?.split(' ')[0] || ''
+    const nomRestaurant = prenom
+      ? `Restaurant de ${prenom}`
+      : 'Mon Restaurant'
+
+    const slug = nomRestaurant.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+      + '-' + Math.random().toString(36).substr(2, 5)
+
+    const { data: restaurant, error: restoError } = await supabase
+      .from('restaurants')
+      .insert({ nom: nomRestaurant, slug, email: user.email, ville: 'Abidjan' })
+      .select().single()
+
+    if (restoError) {
+      // Restaurant existe peut-être déjà (double appel) → chercher le profil à nouveau
+      const { data: profileRetry } = await supabase
+        .from('profiles').select('restaurant_id').eq('id', user.id).single()
+      if (profileRetry?.restaurant_id) {
+        router.push('/dashboard')
+        return
+      }
+      setStatus('Erreur lors de la création')
+      setTimeout(() => router.push('/auth/login'), 2000)
+      return
+    }
+
+    const nameParts = (user.user_metadata?.full_name || '').split(' ')
+    await supabase.from('profiles').upsert({
+      id: user.id,
+      restaurant_id: restaurant.id,
+      nom: nameParts[1] || '',
+      prenom: nameParts[0] || '',
+      role: 'gerant',
+    })
+
+    setStatus('Espace créé ! Redirection...')
+    router.push('/dashboard')
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#0D0D0D', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui", gap: 16 }}>

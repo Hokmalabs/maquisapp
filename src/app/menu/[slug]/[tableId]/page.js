@@ -21,11 +21,11 @@ const STATUT_CONFIG = {
 };
 
 const MODES_PAIEMENT = [
-  { id: 'wave',         label: 'Wave',         icon: '🌊' },
-  { id: 'orange_money', label: 'Orange Money', icon: '🟠' },
-  { id: 'mtn_money',   label: 'MTN Money',    icon: '💛' },
-  { id: 'cash',        label: 'Espèces',      icon: '💵' },
-  { id: 'carte',       label: 'Carte bancaire',icon: '💳' },
+  { id: 'wave',         label: 'Wave',          icon: '🌊' },
+  { id: 'orange_money', label: 'Orange Money',  icon: '🟠' },
+  { id: 'mtn_money',   label: 'MTN Money',     icon: '💛' },
+  { id: 'cash',        label: 'Espèces',       icon: '💵' },
+  { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
 ];
 
 export default function MenuPage({ params }) {
@@ -36,22 +36,23 @@ export default function MenuPage({ params }) {
   const [plats, setPlats]             = useState([]);
   const [table, setTable]             = useState(null);
   const [panier, setPanier]           = useState([]);
-  // OPTION C : tableau de toutes les commandes actives de la table
   const [commandes, setCommandes]     = useState([]);
-  const [allItems, setAllItems]       = useState({}); // { cmdId: [items] }
+  const [allItems, setAllItems]       = useState({});
   const [loading, setLoading]         = useState(true);
   const [activeCat, setActiveCat]     = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showPanierModal, setShowPanierModal]     = useState(false);
-  const [showDetailCmd, setShowDetailCmd]         = useState(null); // commande sélectionnée
+  const [showDetailCmd, setShowDetailCmd]         = useState(null);
   const [showPaiementModal, setShowPaiementModal] = useState(false);
-  const [showRecu, setShowRecu]       = useState(false); // reçu après clôture
-  const [recuData, setRecuData]       = useState(null);  // données du reçu
+  const [showRecu, setShowRecu]       = useState(false);
+  const [recuData, setRecuData]       = useState(null);
   const [appelEnvoye, setAppelEnvoye] = useState(false);
   const [modePaiement, setModePaiement] = useState('');
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
   const catRefs = useRef({});
+  // ─── FIX BUG 4 : ref pour éviter les appels multiples à afficherRecu ──────
+  const recuEnCours = useRef(false);
 
   useEffect(() => { loadData(); }, [slug, tableId]);
 
@@ -82,18 +83,21 @@ export default function MenuPage({ params }) {
       .eq('table_id', tableId)
       .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'])
       .order('created_at', { ascending: true });
-    setCommandes(cmds || []);
-    if (cmds?.length) {
-      // Charger les items de toutes les commandes
-      for (const cmd of cmds) {
-        loadItemsForCmd(cmd.id);
-      }
-    }
-  }
 
-  async function loadItemsForCmd(cmdId) {
-    const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmdId);
-    setAllItems(prev => ({ ...prev, [cmdId]: data || [] }));
+    const cmdList = cmds || [];
+    setCommandes(cmdList);
+
+    // ─── FIX BUG 4 : charger les items UNE SEULE FOIS avec Promise.all ──────
+    if (cmdList.length) {
+      const itemsMap = {};
+      await Promise.all(cmdList.map(async (cmd) => {
+        const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
+        itemsMap[cmd.id] = data || [];
+      }));
+      setAllItems(itemsMap);
+    } else {
+      setAllItems({});
+    }
   }
 
   // ─── REALTIME ─────────────────────────────────────────────────────────────
@@ -105,23 +109,56 @@ export default function MenuPage({ params }) {
         filter: `table_id=eq.${tableId}`
       }, async (payload) => {
         const s = payload.new?.statut;
+
+        // ─── FIX BUG 3 : NE PAS recharger tous les items sur chaque event ──
+        // On recharge seulement les commandes (pas les items)
+        // Les items sont rechargés uniquement si le statut change (pas DELETE)
         if (['en_attente','valide','en_preparation','presque_pret','servi'].includes(s)) {
-          await loadCommandes();
+          // Mettre à jour seulement la commande concernée dans le state
+          setCommandes(prev => {
+            const exists = prev.find(c => c.id === payload.new.id);
+            if (exists) {
+              return prev.map(c => c.id === payload.new.id ? { ...payload.new } : c);
+            }
+            return [...prev, payload.new];
+          });
+          // Charger les items de cette commande seulement si elle est nouvelle
+          setAllItems(prev => {
+            if (!prev[payload.new.id]) {
+              // Nouvelle commande → charger ses items
+              supabase.from('commande_items').select('*').eq('commande_id', payload.new.id)
+                .then(({ data }) => {
+                  setAllItems(p => ({ ...p, [payload.new.id]: data || [] }));
+                });
+            }
+            // Si commande existante, NE PAS écraser les items (fix bug 3)
+            return prev;
+          });
         } else if (s === 'cloture') {
-          // Vérifier s'il reste des commandes actives
+          if (recuEnCours.current) return;
           const { data: remaining } = await supabase
             .from('commandes')
             .select('id')
             .eq('table_id', tableId)
             .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
           if (!remaining?.length) {
-            // Toutes clôturées → afficher reçu et message de fin
+            recuEnCours.current = true;
             await afficherRecu();
           } else {
-            await loadCommandes();
+            setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
+            setAllItems(prev => {
+              const next = { ...prev };
+              delete next[payload.new.id];
+              return next;
+            });
           }
         } else if (s === 'annule') {
-          await loadCommandes();
+          setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
+          setAllItems(prev => {
+            const next = { ...prev };
+            delete next[payload.new.id];
+            return next;
+          });
         }
       })
       .subscribe();
@@ -129,7 +166,6 @@ export default function MenuPage({ params }) {
   }, [restaurant, tableId]);
 
   async function afficherRecu() {
-    // Récupérer toutes les commandes clôturées de cette session
     const { data: cmdsCloturees } = await supabase
       .from('commandes')
       .select('*')
@@ -139,19 +175,26 @@ export default function MenuPage({ params }) {
 
     if (!cmdsCloturees?.length) return;
 
-    // Récupérer les items de toutes ces commandes
+    // ─── FIX BUG 4 : charger chaque commande UNE SEULE FOIS ─────────────────
     const allItemsRecu = [];
-    for (const cmd of cmdsCloturees) {
-      const { data: items } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
-      if (items) allItemsRecu.push(...items);
-    }
+    const cmdIds = cmdsCloturees.map(c => c.id);
+    // Requête unique pour tous les items
+    const { data: tousLesItems } = await supabase
+      .from('commande_items')
+      .select('*')
+      .in('commande_id', cmdIds);
+
+    if (tousLesItems) allItemsRecu.push(...tousLesItems);
 
     const totalGeneral = cmdsCloturees.reduce((s, c) => s + (c.total || 0), 0);
     const modePaie = cmdsCloturees[cmdsCloturees.length - 1]?.mode_paiement || '';
 
+    // Récupérer les infos table fraîches
+    const { data: tblFresh } = await supabase.from('tables').select('*').eq('id', tableId).single();
+
     setRecuData({
       restaurant,
-      table,
+      table: tblFresh,
       commandes: cmdsCloturees,
       items: allItemsRecu,
       total: totalGeneral,
@@ -189,7 +232,6 @@ export default function MenuPage({ params }) {
     return panier.find(i => i.plat_id === platId)?.quantite || 0;
   }
 
-  // ─── ENVOYER COMMANDE (toujours une nouvelle) ─────────────────────────────
   async function envoyerCommande() {
     if (!panier.length || !restaurant || !table) return;
     const { data: cmd, error } = await supabase
@@ -202,13 +244,14 @@ export default function MenuPage({ params }) {
     );
     setPanier([]);
     setShowPanierModal(false);
-    await loadCommandes();
+    // Ajouter la commande et ses items directement sans recharger tout
+    setCommandes(prev => [...prev, cmd]);
+    const { data: newItems } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
+    setAllItems(prev => ({ ...prev, [cmd.id]: newItems || [] }));
   }
 
-  // ─── PAIEMENT (sur toutes les commandes de la table) ─────────────────────
   async function demanderPaiement() {
     if (!modePaiement || !commandes.length) return;
-    // Mettre le mode_paiement sur toutes les commandes actives
     for (const cmd of commandes) {
       await supabase.from('commandes').update({ mode_paiement: modePaiement }).eq('id', cmd.id);
     }
@@ -216,7 +259,6 @@ export default function MenuPage({ params }) {
     setModePaiement('');
   }
 
-  // ─── APPEL SERVEUR ────────────────────────────────────────────────────────
   async function appelServeur() {
     if (!restaurant || !table || appelEnvoye) return;
     await supabase.from('appels_serveur').insert({ restaurant_id: restaurant.id, table_id: table.id, traite: false });
@@ -224,7 +266,6 @@ export default function MenuPage({ params }) {
     setTimeout(() => setAppelEnvoye(false), 30000);
   }
 
-  // ─── FILTRE PLATS ─────────────────────────────────────────────────────────
   const platsByCat = categories.map(cat => ({ ...cat, plats: plats.filter(p => p.categorie_id === cat.id) }));
   const platsFiltres = plats.filter(p => p.nom.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -233,14 +274,12 @@ export default function MenuPage({ params }) {
     catRefs.current[catId]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  // Total de toutes les commandes actives
   const totalGlobal = commandes.reduce((s, c) => s + (c.total || 0), 0);
   const toutesServies = commandes.length > 0 && commandes.every(c => c.statut === 'servi');
 
   if (loading) return <LoadingScreen />;
   if (!restaurant) return <ErrorScreen />;
 
-  // ─── ÉCRAN FIN DE SESSION (table clôturée) ────────────────────────────────
   if (tableCloturee && !showRecu) {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui", padding: 24, textAlign: 'center' }}>
@@ -270,7 +309,7 @@ export default function MenuPage({ params }) {
         .btn-cmd:active { transform: scale(0.97); opacity:.9; }
       `}</style>
 
-      {/* ── HEADER ─────────────────────────────────────────────────────── */}
+      {/* HEADER */}
       <div style={{ background: C.white, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -299,10 +338,7 @@ export default function MenuPage({ params }) {
         </div>
       </div>
 
-      {/* ── BODY ─────────────────────────────────────────────────────────── */}
       <div style={{ paddingBottom: 130 }}>
-
-        {/* COMMANDES ACTIVES (Option C : toutes affichées) */}
         {commandes.length > 0 && (
           <div style={{ margin: '14px 16px 0' }}>
             {commandes.map((cmd, idx) => (
@@ -317,14 +353,12 @@ export default function MenuPage({ params }) {
                 />
               </div>
             ))}
-            {/* Récap total global si plusieurs commandes */}
             {commandes.length > 1 && (
               <div style={{ background: C.dark, borderRadius: 12, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: '#aaa' }}>Total général ({commandes.length} commandes)</span>
                 <span style={{ fontSize: 15, fontWeight: 800, color: C.primary }}>{totalGlobal.toLocaleString()} F</span>
               </div>
             )}
-            {/* Bouton payer si toutes servies */}
             {toutesServies && (
               <button onClick={() => setShowPaiementModal(true)}
                 style={{ width: '100%', background: C.green, border: 'none', borderRadius: 12, padding: '12px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
@@ -334,7 +368,6 @@ export default function MenuPage({ params }) {
           </div>
         )}
 
-        {/* BANNIÈRE (si aucune commande) */}
         {commandes.length === 0 && (
           <div style={{ margin: '14px 16px 0', borderRadius: 18, background: 'linear-gradient(135deg, #FF6B35 0%, #FF8C42 60%, #FFB347 100%)', padding: '18px', position: 'relative', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', right: -10, top: -10, fontSize: 72, opacity: .13 }}>🍽️</div>
@@ -344,7 +377,6 @@ export default function MenuPage({ params }) {
           </div>
         )}
 
-        {/* Bandeau "Ajouter une nouvelle commande" si commande déjà active */}
         {commandes.length > 0 && (
           <div style={{ margin: '10px 16px 0', background: C.primaryLight, borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 16 }}>➕</span>
@@ -352,7 +384,6 @@ export default function MenuPage({ params }) {
           </div>
         )}
 
-        {/* CATÉGORIES */}
         {!searchQuery && (
           <>
             <div style={{ padding: '16px 16px 8px', fontSize: 15, fontWeight: 700, color: C.dark }}>
@@ -369,7 +400,6 @@ export default function MenuPage({ params }) {
           </>
         )}
 
-        {/* LISTE PLATS */}
         {!searchQuery ? (
           platsByCat.map(cat => cat.plats.length === 0 ? null : (
             <div key={cat.id} ref={el => catRefs.current[cat.id] = el} style={{ marginTop: 20 }}>
@@ -395,7 +425,6 @@ export default function MenuPage({ params }) {
         )}
       </div>
 
-      {/* ── PANIER FLOTTANT ───────────────────────────────────────────── */}
       {countPanier > 0 && (
         <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 200, width: 'calc(100% - 32px)', maxWidth: 398, animation: 'slideUp .3s ease' }}>
           <button className="btn-cmd" onClick={() => setShowPanierModal(true)}
@@ -403,15 +432,12 @@ export default function MenuPage({ params }) {
             <div style={{ background: C.primary, borderRadius: 8, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{countPanier}</span>
             </div>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>
-              {commandes.length > 0 ? 'Nouvelle commande' : 'Voir mon panier'}
-            </span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{commandes.length > 0 ? 'Nouvelle commande' : 'Voir mon panier'}</span>
             <span style={{ fontSize: 14, fontWeight: 700, color: C.primary }}>{totalPanier.toLocaleString()} F</span>
           </button>
         </div>
       )}
 
-      {/* ── MODALS ────────────────────────────────────────────────────── */}
       {showPanierModal && (
         <ModalPanier panier={panier} total={totalPanier} plats={plats}
           isNouvelle={commandes.length > 0}
@@ -419,30 +445,22 @@ export default function MenuPage({ params }) {
           onAdd={ajouterAuPanier} onRemove={retirerDuPanier}
           onCommander={envoyerCommande} />
       )}
-
       {platDetail && (
         <ModalPlatDetail plat={platDetail} quantite={quantiteDans(platDetail.id)}
           onClose={() => setPlatDetail(null)}
           onAdd={() => ajouterAuPanier(platDetail)}
           onRemove={() => retirerDuPanier(platDetail.id)} />
       )}
-
       {showPaiementModal && (
-        <ModalPaiement
-          commandes={commandes} total={totalGlobal}
+        <ModalPaiement commandes={commandes} total={totalGlobal}
           modePaiement={modePaiement} setModePaiement={setModePaiement}
           onClose={() => setShowPaiementModal(false)}
           onConfirm={demanderPaiement} />
       )}
-
       {showDetailCmd && (
-        <ModalDetailCommande
-          cmd={showDetailCmd}
-          items={allItems[showDetailCmd.id] || []}
+        <ModalDetailCommande cmd={showDetailCmd} items={allItems[showDetailCmd.id] || []}
           onClose={() => setShowDetailCmd(null)} />
       )}
-
-      {/* ── REÇU NUMÉRIQUE ────────────────────────────────────────────── */}
       {showRecu && recuData && (
         <div style={{ position: 'fixed', inset: 0, background: C.bg, zIndex: 500, overflowY: 'auto', animation: 'fadeIn .3s' }}>
           <RecuNumerique data={recuData} onClose={() => setShowRecu(false)} tableCloturee={tableCloturee} />
@@ -451,8 +469,6 @@ export default function MenuPage({ params }) {
     </div>
   );
 }
-
-// ─── COMPOSANTS ──────────────────────────────────────────────────────────────
 
 function CommandeStatusBanner({ cmd, items, index, total, onVoirDetails, onPayer }) {
   const cfg = STATUT_CONFIG[cmd.statut] || STATUT_CONFIG.en_attente;
@@ -502,15 +518,14 @@ function ModalDetailCommande({ cmd, items, onClose }) {
             <button onClick={onClose} style={{ background: '#F0F0F5', border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 14 }}>✕</button>
           </div>
         </div>
-        {/* Stepper */}
         <div style={{ padding: '12px 18px', borderBottom: '1px solid #F0F0F5' }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
             {steps.map((s, i) => (
               <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 1 : 'none' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', background: i <= stepIdx ? '#FF6B35' : '#F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .4s' }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: i <= stepIdx ? '#FF6B35' : '#F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {i <= stepIdx ? <span style={{ color: '#fff', fontSize: 11 }}>✓</span> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E8E8F0', display: 'block' }}></span>}
                 </div>
-                {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? '#FF6B35' : '#F0F0F5', margin: '0 3px', transition: 'all .4s' }}></div>}
+                {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? '#FF6B35' : '#F0F0F5', margin: '0 3px' }}></div>}
               </div>
             ))}
           </div>
@@ -572,11 +587,7 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
           <div style={{ fontSize: 16, fontWeight: 800, color: '#1A1A2E' }}>{isNouvelle ? '➕ Nouvelle commande' : 'Mon panier 🛒'}</div>
           <button onClick={onClose} style={{ background: '#F5F5F5', border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
         </div>
-        {isNouvelle && (
-          <div style={{ padding: '8px 18px 0', fontSize: 11, color: '#FF6B35', fontWeight: 600 }}>
-            ℹ️ Cette commande sera ajoutée à votre session en cours
-          </div>
-        )}
+        {isNouvelle && <div style={{ padding: '8px 18px 0', fontSize: 11, color: '#FF6B35', fontWeight: 600 }}>ℹ️ Cette commande sera ajoutée à votre session en cours</div>}
         <div style={{ overflowY: 'auto', flex: 1, padding: '10px 18px' }}>
           {panier.map(item => {
             const plat = plats.find(p => p.id === item.plat_id);
@@ -669,13 +680,9 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
   const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement);
 
-  function imprimer() {
-    window.print();
-  }
-
-  // Grouper items par nom pour le reçu
+  // ─── FIX BUG 4 : grouper correctement sans multiplier ────────────────────
   const itemsGroupes = items.reduce((acc, item) => {
-    const key = item.nom_plat;
+    const key = item.nom_plat + '_' + item.prix_unitaire;
     if (acc[key]) {
       acc[key].quantite += item.quantite;
       acc[key].total += item.prix_unitaire * item.quantite;
@@ -696,18 +703,11 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
           .no-print { display: none !important; }
         }
       `}</style>
-
-      {/* Header */}
       <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-        {!tableCloturee && (
-          <button onClick={onClose} style={{ background: '#F0F0F5', border: 'none', borderRadius: 10, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>
-        )}
+        {!tableCloturee && <button onClick={onClose} style={{ background: '#F0F0F5', border: 'none', borderRadius: 10, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>}
         <div style={{ fontSize: 17, fontWeight: 800, color: '#1A1A2E' }}>Votre reçu</div>
       </div>
-
-      {/* REÇU */}
       <div id="recu-print" style={{ background: '#fff', borderRadius: 20, padding: '24px 20px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', maxWidth: 400, margin: '0 auto' }}>
-        {/* En-tête reçu */}
         <div style={{ textAlign: 'center', borderBottom: '1px dashed #E8E8F0', paddingBottom: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 32, marginBottom: 6 }}>🍽️</div>
           <div style={{ fontSize: 18, fontWeight: 800, color: '#1A1A2E' }}>{restaurant?.nom}</div>
@@ -715,12 +715,8 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
           {restaurant?.telephone && <div style={{ fontSize: 12, color: '#8A8A9A' }}>{restaurant.telephone}</div>}
           <div style={{ marginTop: 10, fontSize: 11, color: '#8A8A9A' }}>{dateStr}</div>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#1A1A2E', marginTop: 4 }}>Table {table?.numero} — {table?.zone || 'Salle'}</div>
-          {commandes?.length > 1 && (
-            <div style={{ fontSize: 11, color: '#FF6B35', marginTop: 3 }}>{commandes.length} commandes groupées</div>
-          )}
+          {commandes?.length > 1 && <div style={{ fontSize: 11, color: '#FF6B35', marginTop: 3 }}>{commandes.length} commandes groupées</div>}
         </div>
-
-        {/* Articles */}
         <div style={{ marginBottom: 16 }}>
           {lignes.map((l, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #F5F5F5' }}>
@@ -732,8 +728,6 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
             </div>
           ))}
         </div>
-
-        {/* Total */}
         <div style={{ borderTop: '2px solid #1A1A2E', paddingTop: 12, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: '#1A1A2E' }}>TOTAL</span>
@@ -746,25 +740,20 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
             </div>
           )}
         </div>
-
-        {/* Pied */}
         <div style={{ textAlign: 'center', borderTop: '1px dashed #E8E8F0', paddingTop: 14 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E', marginBottom: 4 }}>Merci de votre visite ! 🙏</div>
           <div style={{ fontSize: 11, color: '#8A8A9A' }}>À bientôt chez {restaurant?.nom}</div>
           <div style={{ fontSize: 10, color: '#ccc', marginTop: 8 }}>Reçu généré par MaquisApp</div>
         </div>
       </div>
-
-      {/* Actions */}
-      <div className="no-print" style={{ maxWidth: 400, margin: '16px auto 0', display: 'flex', gap: 10 }}>
-        <button onClick={imprimer}
-          style={{ flex: 1, background: '#1A1A2E', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+      <div className="no-print" style={{ maxWidth: 400, margin: '16px auto 0' }}>
+        <button onClick={() => window.print()}
+          style={{ width: '100%', background: '#1A1A2E', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
           🖨️ Imprimer / Télécharger
         </button>
       </div>
-
       {tableCloturee && (
-        <div className="no-print" style={{ maxWidth: 400, margin: '10px auto 0', textAlign: 'center', fontSize: 12, color: '#8A8A9A', padding: '0 10px' }}>
+        <div className="no-print" style={{ maxWidth: 400, margin: '10px auto 0', textAlign: 'center', fontSize: 12, color: '#8A8A9A' }}>
           Pour commander à nouveau, scannez le QR code de votre table.
         </div>
       )}
