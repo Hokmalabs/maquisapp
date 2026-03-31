@@ -1,0 +1,104 @@
+'use client'
+import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { supabase } from '../../lib/supabase'
+
+export default function AuthCallback() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [status, setStatus] = useState('Connexion en cours...')
+
+  useEffect(() => {
+    handleCallback()
+  }, [])
+
+  async function handleCallback() {
+    try {
+      // Récupérer la session après redirect OAuth
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error || !session) {
+        setStatus('Erreur de connexion')
+        setTimeout(() => router.push('/auth/login'), 2000)
+        return
+      }
+
+      const user = session.user
+      const isRegister = searchParams.get('register') === 'true'
+
+      // Vérifier si un profil existe déjà
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*, restaurants(*)')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.restaurant_id) {
+        // Profil existe → aller au dashboard
+        setStatus('Bienvenue ! Redirection...')
+        router.push('/dashboard')
+        return
+      }
+
+      // Pas de profil → c'est un nouvel utilisateur Google
+      // Si inscription, créer le restaurant avec les infos Google
+      if (isRegister || !profile) {
+        setStatus('Création de votre espace...')
+
+        const nomRestaurant = user.user_metadata?.full_name
+          ? `Restaurant de ${user.user_metadata.full_name.split(' ')[0]}`
+          : 'Mon Restaurant'
+
+        const slug = nomRestaurant.toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+          + '-' + Math.random().toString(36).substr(2, 5)
+
+        const { data: restaurant, error: restoError } = await supabase
+          .from('restaurants')
+          .insert({
+            nom: nomRestaurant,
+            slug,
+            email: user.email,
+            ville: 'Abidjan',
+          })
+          .select().single()
+
+        if (restoError) {
+          setStatus('Erreur lors de la création')
+          setTimeout(() => router.push('/auth/login'), 2000)
+          return
+        }
+
+        const nameParts = (user.user_metadata?.full_name || '').split(' ')
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          restaurant_id: restaurant.id,
+          nom: nameParts[1] || '',
+          prenom: nameParts[0] || '',
+          role: 'gerant',
+        })
+
+        setStatus('Espace créé ! Redirection...')
+        router.push('/dashboard')
+      } else {
+        router.push('/auth/login')
+      }
+    } catch (err) {
+      setStatus('Une erreur est survenue')
+      setTimeout(() => router.push('/auth/login'), 2000)
+    }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#0D0D0D', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui", gap: 16 }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap');
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+      `}</style>
+      <div style={{ fontSize: 48, animation: 'float 2s ease-in-out infinite' }}>🍽️</div>
+      <div style={{ width: 36, height: 36, border: '3px solid rgba(255,107,53,.2)', borderTop: '3px solid #FF6B35', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+      <div style={{ fontSize: 14, color: 'rgba(255,255,255,.6)', fontWeight: 500 }}>{status}</div>
+    </div>
+  )
+}

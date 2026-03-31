@@ -2,77 +2,66 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase';
 
 const C = {
-  bg:'#FFF8F3',header:'#1A1A2E',orange:'#FF6B35',orangeL:'#FFF0EA',
-  white:'#FFFFFF',border:'#F0E8E0',textDark:'#1A1A2E',textGray:'#8A7E75',
-  textLight:'#B5ADA6',green:'#22C55E',greenL:'#F0FDF4',red:'#EF4444',
-  redL:'#FEF2F2',yellow:'#F59E0B',yellowL:'#FFFBEB',shadow:'rgba(26,26,46,0.08)',
-  purple:'#8B5CF6',purpleL:'#F5F3FF',
+  bg: '#F5F5F5', white: '#FFFFFF', primary: '#FF6B35', primaryLight: '#FFF0EB',
+  dark: '#1A1A2E', gray: '#8A8A9A', grayLight: '#F0F0F5', border: '#E8E8F0',
+  green: '#00C851', yellow: '#FFB800', red: '#FF3B30', shadow: 'rgba(0,0,0,0.07)',
+  purple: '#8B5CF6',
 };
 
-const S = {
-  card:{background:C.white,borderRadius:16,border:`1px solid ${C.border}`,boxShadow:`0 2px 12px ${C.shadow}`},
-  btn:(v='primary')=>({
-    display:'inline-flex',alignItems:'center',justifyContent:'center',gap:6,
-    padding:'9px 16px',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer',border:'none',transition:'all .18s',
-    ...(v==='primary'?{background:C.orange,color:C.white}
-      :v==='ghost'?{background:'transparent',color:C.textGray,border:`1.5px solid ${C.border}`}
-      :{background:C.orangeL,color:C.orange}),
-  }),
-  input:{width:'100%',padding:'10px 14px',borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:14,color:C.textDark,background:C.white,outline:'none',fontFamily:'system-ui, sans-serif',boxSizing:'border-box'},
-  label:{fontSize:12,fontWeight:600,color:C.textGray,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:6,display:'block'},
-};
+const MODES = [
+  { id: 'wave',         label: 'Wave',          icon: '🌊', color: '#1BA7FF' },
+  { id: 'orange_money', label: 'Orange Money',  icon: '🟠', color: '#FF6600' },
+  { id: 'mtn_money',   label: 'MTN Money',     icon: '💛', color: '#FFC107' },
+  { id: 'cash',        label: 'Espèces',       icon: '💵', color: '#00C851' },
+  { id: 'carte',       label: 'Carte',         icon: '💳', color: '#8B5CF6' },
+];
 
-const Icon = {
-  home:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
-  menu:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
-  table:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>,
-  order:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>,
-  history:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.44-4.22"/></svg>,
-  download:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
-  trend:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
-  calendar:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
-  close:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
-};
-
-function BottomNav({active}){
-  const router=useRouter();
-  const items=[
-    {id:'home',label:'Accueil',icon:Icon.home,path:'/dashboard'},
-    {id:'menu',label:'Menu',icon:Icon.menu,path:'/dashboard/menu'},
-    {id:'tables',label:'Tables',icon:Icon.table,path:'/dashboard/tables'},
-    {id:'commandes',label:'Commandes',icon:Icon.order,path:'/dashboard/commandes'},
-    {id:'historique',label:'Historique',icon:Icon.history,path:'/dashboard/historique'},
-  ];
-  return(
-    <nav style={{position:'fixed',bottom:0,left:0,right:0,zIndex:100,background:C.white,borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'stretch',paddingBottom:'env(safe-area-inset-bottom)'}}>
-      {items.map(it=>(
-        <button key={it.id} onClick={()=>router.push(it.path)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,padding:'10px 4px 8px',border:'none',background:'transparent',cursor:'pointer',color:active===it.id?C.orange:C.textLight,fontSize:10,fontWeight:600,fontFamily:'system-ui, sans-serif',position:'relative'}}>
-          <span style={{transform:active===it.id?'scale(1.15)':'scale(1)',transition:'transform .18s'}}>{it.icon}</span>
-          {it.label}
-          {active===it.id&&<span style={{width:4,height:4,borderRadius:'50%',background:C.orange,position:'absolute',bottom:6}}/>}
-        </button>
-      ))}
-    </nav>
-  );
+function getMode(id) {
+  return MODES.find(m => m.id === id) || { label: id || 'Non spécifié', icon: '❓', color: '#8A8A9A' };
 }
 
-// ─── Mini bar chart (CSS only) ────────────────────────────────────────
-function BarChart({data}){
-  if(!data||data.length===0)return null;
-  const max=Math.max(...data.map(d=>d.total),1);
-  const today=new Date().toISOString().slice(0,10);
-  return(
-    <div style={{display:'flex',alignItems:'flex-end',gap:4,height:80,padding:'0 4px'}}>
-      {data.slice(-14).map((d,i)=>{
-        const h=Math.max((d.total/max)*70,2);
-        const isToday=d.date===today;
-        return(
-          <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
-            <div style={{width:'100%',height:h,borderRadius:'4px 4px 0 0',background:isToday?C.orange:'rgba(255,107,53,0.25)',minHeight:2}}/>
-            <span style={{fontSize:8,color:isToday?C.orange:C.textLight,fontWeight:isToday?700:400}}>
+const PERIODS = [
+  { id: 'today', label: "Aujourd'hui" },
+  { id: 'week',  label: '7 jours' },
+  { id: 'month', label: '30 jours' },
+  { id: 'custom',label: 'Personnalisé' },
+];
+
+function getPeriodRange(period, customFrom, customTo) {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  if (period === 'today') return { from: today, to: today };
+  if (period === 'week') {
+    const f = new Date(now); f.setDate(f.getDate() - 6);
+    return { from: f.toISOString().slice(0, 10), to: today };
+  }
+  if (period === 'month') {
+    const f = new Date(now); f.setDate(f.getDate() - 29);
+    return { from: f.toISOString().slice(0, 10), to: today };
+  }
+  return { from: customFrom || today, to: customTo || today };
+}
+
+function fmtCFA(n) { return Number(n || 0).toLocaleString('fr-CI') + ' F'; }
+function fmtDate(d) { return new Date(d).toLocaleDateString('fr-CI', { day: '2-digit', month: 'short' }); }
+function fmtTime(d) { return new Date(d).toLocaleTimeString('fr-CI', { hour: '2-digit', minute: '2-digit' }); }
+
+function BarChart({ data }) {
+  if (!data || data.length === 0) return null;
+  const max = Math.max(...data.map(d => d.total), 1);
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 72, padding: '0 2px' }}>
+      {data.slice(-14).map((d, i) => {
+        const h = Math.max((d.total / max) * 60, 2);
+        const isToday = d.date === today;
+        return (
+          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <div style={{ width: '100%', height: h, borderRadius: '3px 3px 0 0', background: isToday ? '#FF6B35' : 'rgba(255,107,53,0.3)', minHeight: 2 }} />
+            <span style={{ fontSize: 7, color: isToday ? '#FF6B35' : 'rgba(255,255,255,.4)', fontWeight: isToday ? 700 : 400 }}>
               {new Date(d.date).getDate()}
             </span>
           </div>
@@ -82,241 +71,274 @@ function BarChart({data}){
   );
 }
 
-// ─── Export CSV ───────────────────────────────────────────────────────
-function exportCSV(commandes, tables){
-  const rows=[['Date','Heure','Table','Total (FCFA)','Mode paiement','Statut']];
-  commandes.forEach(c=>{
-    const t=tables.find(x=>x.id===c.table_id);
-    const dt=new Date(c.created_at);
+function exportCSV(commandes, tables) {
+  const rows = [['Date', 'Heure', 'Table', 'Total (FCFA)', 'Mode paiement', 'Statut']];
+  commandes.forEach(c => {
+    const t = tables.find(x => x.id === c.table_id);
+    const dt = new Date(c.created_at);
     rows.push([
       dt.toLocaleDateString('fr-CI'),
-      dt.toLocaleTimeString('fr-CI',{hour:'2-digit',minute:'2-digit'}),
-      `Table ${t?.numero||'?'}`,
-      c.total||0,
-      c.mode_paiement||'—',
+      dt.toLocaleTimeString('fr-CI', { hour: '2-digit', minute: '2-digit' }),
+      `Table ${t?.numero || '?'}`,
+      c.total || 0,
+      c.mode_paiement || '—',
       c.statut,
     ]);
   });
-  const csv=rows.map(r=>r.join(';')).join('\n');
-  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download=`maquisapp_historique_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+  const csv = rows.map(r => r.join(';')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `maquisapp_historique_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
   URL.revokeObjectURL(url);
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────
-function fmtCFA(n){return Number(n||0).toLocaleString('fr-CI')+' F';}
-function fmtDate(d){return new Date(d).toLocaleDateString('fr-CI',{day:'2-digit',month:'short'});}
-function fmtTime(d){return new Date(d).toLocaleTimeString('fr-CI',{hour:'2-digit',minute:'2-digit'});}
+export default function HistoriquePage() {
+  const router = useRouter();
+  const [restaurant, setRestaurant] = useState(null);
+  const [tables, setTables]         = useState([]);
+  const [commandes, setCommandes]   = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [period, setPeriod]         = useState('today');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo]     = useState('');
+  const [showCustom, setShowCustom] = useState(false);
+  const [filterMode, setFilterMode] = useState('all'); // filtre par mode paiement
+  const [showDetail, setShowDetail] = useState(null);  // commande sélectionnée
+  const [detailItems, setDetailItems] = useState([]);
 
-const PERIODS=[
-  {id:'today',label:"Aujourd'hui"},
-  {id:'week',label:'7 jours'},
-  {id:'month',label:'30 jours'},
-  {id:'custom',label:'Personnalisé'},
-];
-
-function getPeriodRange(period,customFrom,customTo){
-  const now=new Date();
-  const todayStr=now.toISOString().slice(0,10);
-  if(period==='today') return{from:todayStr,to:todayStr};
-  if(period==='week'){
-    const f=new Date(now);f.setDate(f.getDate()-6);
-    return{from:f.toISOString().slice(0,10),to:todayStr};
-  }
-  if(period==='month'){
-    const f=new Date(now);f.setDate(f.getDate()-29);
-    return{from:f.toISOString().slice(0,10),to:todayStr};
-  }
-  return{from:customFrom||todayStr,to:customTo||todayStr};
-}
-
-export default function HistoriquePage(){
-  const router=useRouter();
-  const [restaurant,setRestaurant]=useState(null);
-  const [tables,setTables]=useState([]);
-  const [commandes,setCommandes]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [period,setPeriod]=useState('today');
-  const [customFrom,setCustomFrom]=useState('');
-  const [customTo,setCustomTo]=useState('');
-  const [showCustom,setShowCustom]=useState(false);
-
-  useEffect(()=>{
-    (async()=>{
-      const {data:{session}}=await supabase.auth.getSession();
-      if(!session){router.push('/auth/login');return;}
-      const {data:profile}=await supabase.from('profiles').select('restaurant_id').eq('id',session.user.id).single();
-      if(!profile){router.push('/auth/login');return;}
-      const {data:resto}=await supabase.from('restaurants').select('*').eq('id',profile.restaurant_id).single();
+  useEffect(() => {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.push('/auth/login'); return; }
+      const { data: profile } = await supabase.from('profiles').select('restaurant_id').eq('id', session.user.id).single();
+      if (!profile) { router.push('/auth/login'); return; }
+      const { data: resto } = await supabase.from('restaurants').select('*').eq('id', profile.restaurant_id).single();
       setRestaurant(resto);
-      const {data:ts}=await supabase.from('tables').select('*').eq('restaurant_id',profile.restaurant_id);
-      setTables(ts||[]);
+      const { data: ts } = await supabase.from('tables').select('*').eq('restaurant_id', profile.restaurant_id);
+      setTables(ts || []);
       setLoading(false);
     })();
-  },[]);
+  }, []);
 
-  // Load commandes when period changes
-  useEffect(()=>{
-    if(!restaurant)return;
-    const {from,to}=getPeriodRange(period,customFrom,customTo);
-    const fromDt=from+'T00:00:00';
-    const toDt=to+'T23:59:59';
+  useEffect(() => {
+    if (!restaurant) return;
+    const { from, to } = getPeriodRange(period, customFrom, customTo);
     supabase.from('commandes')
       .select('*')
-      .eq('restaurant_id',restaurant.id)
-      .eq('statut','cloture')
-      .gte('created_at',fromDt)
-      .lte('created_at',toDt)
-      .order('created_at',{ascending:false})
-      .then(({data})=>setCommandes(data||[]));
-  },[restaurant,period,customFrom,customTo]);
+      .eq('restaurant_id', restaurant.id)
+      .eq('statut', 'cloture')
+      .gte('created_at', from + 'T00:00:00')
+      .lte('created_at', to + 'T23:59:59')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setCommandes(data || []));
+  }, [restaurant, period, customFrom, customTo]);
 
-  // ── Compute stats ──
-  const ca=commandes.reduce((s,c)=>s+(c.total||0),0);
-  const nbCommandes=commandes.length;
-  const panier=nbCommandes>0?ca/nbCommandes:0;
-  const paye=commandes.filter(c=>c.paye).reduce((s,c)=>s+(c.total||0),0);
-  const nonPaye=ca-paye;
-
-  // Modes paiement
-  const modes={};
-  commandes.forEach(c=>{
-    const m=c.mode_paiement||'non spécifié';
-    modes[m]=(modes[m]||0)+1;
-  });
-
-  // Bar chart data (group by day)
-  const byDay={};
-  commandes.forEach(c=>{
-    const d=c.created_at.slice(0,10);
-    byDay[d]=(byDay[d]||0)+(c.total||0);
-  });
-  const {from,to}=getPeriodRange(period,customFrom,customTo);
-  const chartData=[];
-  const cur=new Date(from);
-  const end=new Date(to);
-  while(cur<=end){
-    const d=cur.toISOString().slice(0,10);
-    chartData.push({date:d,total:byDay[d]||0});
-    cur.setDate(cur.getDate()+1);
+  async function ouvrirDetail(cmd) {
+    setShowDetail(cmd);
+    const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
+    setDetailItems(data || []);
   }
 
-  if(loading)return(<div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{fontSize:14,color:C.textGray}}>Chargement…</div></div>);
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const ca = commandes.reduce((s, c) => s + (c.total || 0), 0);
+  const nbCommandes = commandes.length;
+  const panierMoyen = nbCommandes > 0 ? ca / nbCommandes : 0;
 
-  return(
-    <div style={{minHeight:'100vh',background:C.bg,fontFamily:'system-ui, sans-serif',paddingBottom:80}}>
-      {/* Header */}
-      <div style={{background:C.header,padding:'16px 20px 20px',position:'sticky',top:0,zIndex:50}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <div>
-            <div style={{fontSize:11,color:'rgba(255,255,255,0.5)',fontWeight:600,letterSpacing:'0.06em',textTransform:'uppercase'}}>Rapports</div>
-            <h1 style={{margin:0,fontSize:22,fontWeight:800,color:C.white}}>Historique</h1>
+  // Totaux par mode de paiement (montants)
+  const totauxParMode = {};
+  commandes.forEach(c => {
+    const m = c.mode_paiement || 'non_specifie';
+    if (!totauxParMode[m]) totauxParMode[m] = { count: 0, total: 0 };
+    totauxParMode[m].count++;
+    totauxParMode[m].total += c.total || 0;
+  });
+
+  // Bar chart
+  const byDay = {};
+  commandes.forEach(c => {
+    const d = c.created_at.slice(0, 10);
+    byDay[d] = (byDay[d] || 0) + (c.total || 0);
+  });
+  const { from, to } = getPeriodRange(period, customFrom, customTo);
+  const chartData = [];
+  const cur = new Date(from); const end = new Date(to);
+  while (cur <= end) {
+    const d = cur.toISOString().slice(0, 10);
+    chartData.push({ date: d, total: byDay[d] || 0 });
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  // Filtre mode paiement
+  const commandesFiltrees = filterMode === 'all'
+    ? commandes
+    : commandes.filter(c => (c.mode_paiement || 'non_specifie') === filterMode);
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
+      <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>📊</div>
+      <p style={{ color: C.primary, fontWeight: 600, fontSize: 14 }}>Chargement...</p>
+      <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.1)}}`}</style>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", paddingBottom: 90 }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { display: none; }
+        @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        .row-cmd:active { background: #F5F5F5; }
+        .btn:active { transform: scale(0.97); }
+      `}</style>
+
+      {/* HEADER */}
+      <div style={{ background: C.dark, padding: '48px 16px 0', position: 'sticky', top: 0, zIndex: 100 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => router.push('/dashboard')} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>
+            <div>
+              <div style={{ color: C.white, fontWeight: 700, fontSize: 15 }}>Historique</div>
+              <div style={{ color: '#aaa', fontSize: 11 }}>{restaurant?.nom}</div>
+            </div>
           </div>
-          <button onClick={()=>exportCSV(commandes,tables)} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:10,border:`1.5px solid rgba(255,255,255,0.2)`,background:'transparent',color:C.white,fontSize:13,fontWeight:600,cursor:'pointer'}}>
-            {Icon.download} Export CSV
+          <button className="btn" onClick={() => exportCSV(commandes, tables)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,.2)', background: 'transparent', color: C.white, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            ⬇️ CSV
           </button>
         </div>
 
-        {/* Period selector */}
-        <div style={{display:'flex',gap:6,marginTop:14,overflowX:'auto',scrollbarWidth:'none'}}>
-          {PERIODS.map(p=>(
-            <button key={p.id} onClick={()=>{setPeriod(p.id);setShowCustom(p.id==='custom');}} style={{
-              padding:'6px 14px',borderRadius:999,border:`1.5px solid ${period===p.id?C.orange:'rgba(255,255,255,0.2)'}`,
-              background:period===p.id?C.orange:'transparent',color:C.white,
-              fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
-            }}>{p.label}</button>
+        {/* Filtres période */}
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '0 0 12px' }}>
+          {PERIODS.map(p => (
+            <button key={p.id} onClick={() => { setPeriod(p.id); setShowCustom(p.id === 'custom'); }}
+              style={{ flexShrink: 0, padding: '6px 14px', borderRadius: 50, border: `1.5px solid ${period === p.id ? C.primary : 'rgba(255,255,255,.2)'}`, background: period === p.id ? C.primary : 'transparent', color: C.white, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              {p.label}
+            </button>
           ))}
         </div>
 
-        {/* Custom dates */}
-        {showCustom&&(
-          <div style={{display:'flex',gap:8,marginTop:10}}>
-            <input type="date" style={{...S.input,flex:1,fontSize:13,padding:'8px 10px'}} value={customFrom} onChange={e=>setCustomFrom(e.target.value)}/>
-            <span style={{color:'rgba(255,255,255,0.5)',alignSelf:'center'}}>→</span>
-            <input type="date" style={{...S.input,flex:1,fontSize:13,padding:'8px 10px'}} value={customTo} onChange={e=>setCustomTo(e.target.value)}/>
+        {/* Dates custom */}
+        {showCustom && (
+          <div style={{ display: 'flex', gap: 8, padding: '0 0 12px' }}>
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.1)', color: C.white, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
+            <span style={{ color: 'rgba(255,255,255,.5)', alignSelf: 'center' }}>→</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.1)', color: C.white, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
           </div>
         )}
       </div>
 
-      <div style={{padding:'16px 16px',display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-        {/* CA principal */}
-        <div style={{...S.card,padding:20,background:C.header}}>
-          <div style={{fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:4}}>Chiffre d'affaires</div>
-          <div style={{fontSize:32,fontWeight:800,color:C.white,marginBottom:2}}>{fmtCFA(ca)}</div>
-          <div style={{fontSize:13,color:'rgba(255,255,255,0.5)'}}>{nbCommandes} commande{nbCommandes!==1?'s':''} clôturée{nbCommandes!==1?'s':''}</div>
-          {/* Chart */}
-          {chartData.length>1&&(
-            <div style={{marginTop:16}}>
-              <BarChart data={chartData}/>
-            </div>
-          )}
+        {/* CA PRINCIPAL */}
+        <div style={{ background: C.dark, borderRadius: 20, padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,.15)' }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>Chiffre d'affaires</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: C.white, marginBottom: 2 }}>{fmtCFA(ca)}</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)' }}>{nbCommandes} commande{nbCommandes !== 1 ? 's' : ''} clôturée{nbCommandes !== 1 ? 's' : ''}</div>
+          {chartData.length > 1 && <div style={{ marginTop: 14 }}><BarChart data={chartData} /></div>}
         </div>
 
         {/* KPIs */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
-            {label:'Panier moyen',value:fmtCFA(panier),color:C.purple,bg:C.purpleL},
-            {label:'Encaissé',value:fmtCFA(paye),color:C.green,bg:C.greenL},
-            {label:'Non encaissé',value:fmtCFA(nonPaye),color:nonPaye>0?C.red:C.textGray,bg:nonPaye>0?C.redL:C.bg},
-            {label:'Commandes/jour',value:period==='today'?nbCommandes:(chartData.length>0?(nbCommandes/chartData.length).toFixed(1):0),color:C.orange,bg:C.orangeL},
-          ].map(k=>(
-            <div key={k.label} style={{...S.card,padding:14,background:k.bg,border:`1px solid ${k.color}22`}}>
-              <div style={{fontSize:11,fontWeight:600,color:C.textGray,marginBottom:4}}>{k.label}</div>
-              <div style={{fontSize:18,fontWeight:800,color:k.color}}>{k.value}</div>
+            { label: 'Panier moyen', value: fmtCFA(panierMoyen), color: C.purple, bg: '#F5F3FF' },
+            { label: 'Commandes/jour', value: period === 'today' ? nbCommandes : (chartData.length > 0 ? (nbCommandes / chartData.length).toFixed(1) : 0), color: C.primary, bg: C.primaryLight },
+          ].map(k => (
+            <div key={k.label} style={{ background: C.white, borderRadius: 16, padding: '14px', boxShadow: `0 2px 8px ${C.shadow}`, border: `1px solid ${k.color}22` }}>
+              <div style={{ fontSize: 10, color: C.gray, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>{k.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.value}</div>
             </div>
           ))}
         </div>
 
-        {/* Modes paiement */}
-        {Object.keys(modes).length>0&&(
-          <div style={S.card}>
-            <div style={{padding:'14px 16px',borderBottom:`1px solid ${C.border}`}}>
-              <div style={{fontSize:14,fontWeight:700,color:C.textDark}}>Modes de paiement</div>
+        {/* TOTAUX PAR MODE DE PAIEMENT */}
+        {Object.keys(totauxParMode).length > 0 && (
+          <div style={{ background: C.white, borderRadius: 18, boxShadow: `0 2px 10px ${C.shadow}`, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Encaissements par mode</div>
+              <div style={{ fontSize: 11, color: C.gray }}>{nbCommandes} total</div>
             </div>
-            <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
-              {Object.entries(modes).sort((a,b)=>b[1]-a[1]).map(([m,n])=>(
-                <div key={m} style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:10,flex:1}}>
-                    <span style={{fontSize:13,color:C.textDark,textTransform:'capitalize'}}>{m}</span>
-                    <div style={{flex:1,height:6,background:C.bg,borderRadius:999,overflow:'hidden',maxWidth:120}}>
-                      <div style={{height:'100%',background:C.orange,borderRadius:999,width:`${(n/nbCommandes)*100}%`}}/>
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Object.entries(totauxParMode).sort((a, b) => b[1].total - a[1].total).map(([modeId, stats]) => {
+                const cfg = getMode(modeId);
+                const pct = ca > 0 ? (stats.total / ca) * 100 : 0;
+                return (
+                  <div key={modeId}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 18 }}>{cfg.icon}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{cfg.label}</div>
+                          <div style={{ fontSize: 10, color: C.gray }}>{stats.count} commande{stats.count > 1 ? 's' : ''}</div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: cfg.color }}>{fmtCFA(stats.total)}</div>
+                        <div style={{ fontSize: 10, color: C.gray }}>{pct.toFixed(0)}%</div>
+                      </div>
+                    </div>
+                    {/* Barre de progression */}
+                    <div style={{ height: 5, background: C.grayLight, borderRadius: 99, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', background: cfg.color, borderRadius: 99, width: `${pct}%`, transition: 'width .4s ease' }} />
                     </div>
                   </div>
-                  <span style={{fontSize:13,fontWeight:700,color:C.textDark,marginLeft:8}}>{n}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* Liste commandes */}
-        <div style={S.card}>
-          <div style={{padding:'14px 16px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <div style={{fontSize:14,fontWeight:700,color:C.textDark}}>Détail</div>
-            <span style={{fontSize:12,color:C.textGray}}>{commandes.length} entrées</span>
+        {/* FILTRE PAR MODE + LISTE */}
+        <div style={{ background: C.white, borderRadius: 18, boxShadow: `0 2px 10px ${C.shadow}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Détail</div>
+              <span style={{ fontSize: 11, color: C.gray }}>{commandesFiltrees.length} entrée{commandesFiltrees.length !== 1 ? 's' : ''}</span>
+            </div>
+            {/* Chips filtre mode */}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+              <button onClick={() => setFilterMode('all')}
+                style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 50, border: filterMode === 'all' ? 'none' : `1.5px solid ${C.border}`, background: filterMode === 'all' ? C.dark : C.white, color: filterMode === 'all' ? '#fff' : C.dark, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Tous
+              </button>
+              {Object.keys(totauxParMode).map(modeId => {
+                const cfg = getMode(modeId);
+                const active = filterMode === modeId;
+                return (
+                  <button key={modeId} onClick={() => setFilterMode(modeId)}
+                    style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 50, border: active ? 'none' : `1.5px solid ${C.border}`, background: active ? cfg.color : C.white, color: active ? '#fff' : C.dark, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                    {cfg.icon} {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          {commandes.length===0?(
-            <div style={{padding:24,textAlign:'center',color:C.textGray,fontSize:13}}>Aucune commande clôturée sur cette période</div>
-          ):(
-            <div style={{display:'flex',flexDirection:'column'}}>
-              {commandes.map((c,i)=>{
-                const t=tables.find(x=>x.id===c.table_id);
-                return(
-                  <div key={c.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:i<commandes.length-1?`1px solid ${C.border}`:'none'}}>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:13,fontWeight:600,color:C.textDark}}>Table {t?.numero||'?'}</div>
-                      <div style={{fontSize:11,color:C.textGray,display:'flex',gap:6,marginTop:1}}>
-                        <span>{Icon.calendar} {fmtDate(c.created_at)}</span>
-                        <span>· {fmtTime(c.created_at)}</span>
-                        {c.mode_paiement&&<span>· {c.mode_paiement}</span>}
-                      </div>
+
+          {commandesFiltrees.length === 0 ? (
+            <div style={{ padding: 32, textAlign: 'center', color: C.gray, fontSize: 13 }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
+              Aucune commande sur cette période
+            </div>
+          ) : (
+            <div>
+              {commandesFiltrees.map((c, i) => {
+                const t = tables.find(x => x.id === c.table_id);
+                const cfg = getMode(c.mode_paiement || 'non_specifie');
+                return (
+                  <div key={c.id} className="row-cmd" onClick={() => ouvrirDetail(c)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: i < commandesFiltrees.length - 1 ? `1px solid ${C.border}` : 'none', cursor: 'pointer', transition: 'background .15s' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{cfg.icon}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>Table {t?.numero || '?'}</div>
+                      <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>{fmtDate(c.created_at)} · {fmtTime(c.created_at)} · {cfg.label}</div>
                     </div>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontSize:14,fontWeight:700,color:C.orange}}>{fmtCFA(c.total)}</div>
-                      <div style={{fontSize:11,fontWeight:600,color:c.paye?C.green:C.red}}>{c.paye?'Payée':'Non payée'}</div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{fmtCFA(c.total)}</div>
+                      <div style={{ fontSize: 10, color: C.gray, marginTop: 1 }}>›</div>
                     </div>
                   </div>
                 );
@@ -326,7 +348,67 @@ export default function HistoriquePage(){
         </div>
       </div>
 
-      <BottomNav active="historique"/>
+      {/* BOTTOM NAV */}
+      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
+        {[
+          { icon: '🏠', label: 'Accueil', path: '/dashboard' },
+          { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
+          { icon: '🍛', label: 'Menu', path: '/dashboard/menu' },
+          { icon: '🪑', label: 'Tables', path: '/dashboard/tables' },
+          { icon: '📊', label: 'Historique', path: '/dashboard/historique', active: true },
+        ].map(item => (
+          <button key={item.path} onClick={() => router.push(item.path)}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 0 6px', background: 'none', border: 'none', cursor: 'pointer', color: item.active ? C.primary : C.gray, fontSize: 9, fontWeight: item.active ? 700 : 400, fontFamily: 'inherit', position: 'relative' }}>
+            {item.active && <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 20, height: 3, background: C.primary, borderRadius: '0 0 3px 3px' }}></div>}
+            <span style={{ fontSize: 20 }}>{item.icon}</span>
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {/* MODAL DÉTAIL COMMANDE */}
+      {showDetail && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
+          <div onClick={() => { setShowDetail(null); setDetailItems([]); }} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
+          <div style={{ position: 'relative', width: '100%', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '80vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
+            </div>
+            <div style={{ padding: '10px 18px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: C.dark }}>
+                  Table {tables.find(t => t.id === showDetail.table_id)?.numero || '?'}
+                </div>
+                <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>
+                  {fmtDate(showDetail.created_at)} · {fmtTime(showDetail.created_at)}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ background: getMode(showDetail.mode_paiement || 'non_specifie').color + '18', color: getMode(showDetail.mode_paiement || 'non_specifie').color, borderRadius: 20, padding: '4px 10px', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span>{getMode(showDetail.mode_paiement || 'non_specifie').icon}</span>
+                  {getMode(showDetail.mode_paiement || 'non_specifie').label}
+                </div>
+                <button onClick={() => { setShowDetail(null); setDetailItems([]); }} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
+              </div>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1, padding: '10px 18px' }}>
+              {detailItems.map(item => (
+                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{item.nom_plat}</div>
+                    <div style={{ fontSize: 11, color: C.gray }}>×{item.quantite} · {item.prix_unitaire.toLocaleString()} F/u</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Total</span>
+              <span style={{ fontSize: 17, fontWeight: 800, color: C.primary }}>{fmtCFA(showDetail.total)}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
