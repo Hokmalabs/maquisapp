@@ -1,361 +1,316 @@
-# MAQUISAPP — Cahier des Charges v2.0
-# Hokma Labs • 2026
-# À lire par Claude Code avant toute modification
+# MAQUISAPP — SPECS v3.0
+# À lire ENTIÈREMENT avant toute modification
+# Lis d'abord les fichiers existants concernés, puis applique les corrections
 
 ---
-
-## STACK TECHNIQUE
-
-- Framework : Next.js 14 (App Router)
-- Base de données : Supabase (Auth + Database + Realtime)
-- Déploiement : Vercel
-- URL production : https://maquisapp-xi.vercel.app
-- Repo : github.com/Hokmalabs/maquisapp
 
 ## CONSIGNES TECHNIQUES OBLIGATOIRES
 
-- CSS inline style={{}} uniquement — JAMAIS de Tailwind dans les pages
-- Import supabase : import { supabase } from '../../lib/supabase' (adapter le chemin selon le niveau)
-- JAMAIS de createClient() — supabase est une instance déjà exportée dans lib/supabase.js
+- CSS inline style={{}} uniquement — JAMAIS de Tailwind
+- Import supabase : adapter le chemin selon le niveau du fichier
+  - dashboard/[page]/page.js → import { supabase } from '../../lib/supabase'
+  - menu/[slug]/[tableId]/page.js → import { supabase } from '../../../lib/supabase'
+  - cuisine/[restaurantId]/page.js → import { supabase } from '../../lib/supabase'
+- JAMAIS de createClient() — supabase est déjà une instance exportée
 - Font : DM Sans (Google Fonts)
-- Couleurs : primary #FF6B35 | dark #1A1A2E | bg #F5F5F5 | green #00C851 | gray #8A8A9A
+- Couleurs : primary #FF6B35 | dark #1A1A2E | bg #F5F5F5 | green #00C851
 - Mobile-first, maxWidth 480px pour les pages dashboard
-- L'alias @/ ne fonctionne PAS — imports relatifs uniquement
 - NEXT_PUBLIC_APP_URL = https://maquisapp-xi.vercel.app
-
-## MODES DE PAIEMENT (IDs exacts à utiliser partout)
-
-| ID            | Label          | Icône |
-|---------------|----------------|-------|
-| wave          | Wave           | 🌊    |
-| orange_money  | Orange Money   | 🟠    |
-| mtn_money     | MTN Money      | 💛    |
-| cash          | Espèces        | 💵    |
-| carte         | Carte bancaire | 💳    |
-
-## BASE DE DONNÉES
-
-Tables existantes :
-- restaurants (id, nom, slug, email, telephone, ville, logo_url, actif)
-- profiles (id, restaurant_id, nom, prenom, role)
-- categories (id, restaurant_id, nom, ordre)
-- plats (id, restaurant_id, categorie_id, nom, description, prix, image_url, disponible, ordre)
-- tables (id, restaurant_id, numero, capacite, zone, qr_code_url, actif, statut[libre/occupee])
-- commandes (id, restaurant_id, table_id, statut, mode_paiement, paye, total, validated_at, served_at)
-- commande_items (id, commande_id, plat_id, nom_plat, prix_unitaire, quantite, note)
-- appels_serveur (id, restaurant_id, table_id, traite)
-
-Realtime activé sur : commandes, commande_items, appels_serveur
-Statuts commande : en_attente → valide → en_preparation → presque_pret → servi → cloture → annule
-
-Nouvelles colonnes à ajouter sur la table restaurants (via Supabase dashboard) :
-- abonnement_statut : text — valeurs : 'essai' | 'actif' | 'expire' | 'suspendu'
-- abonnement_fin : timestamptz
-- abonnement_plan : text — valeurs : 'mensuel' | 'annuel'
-
----
-
-## FICHIERS À NE PAS TOUCHER (fonctionnels)
-
-- src/app/page.js (landing page)
-- src/app/auth/login/page.js
-- src/app/auth/register/page.js
-- src/app/dashboard/page.js
-- src/app/dashboard/menu/page.js
-- src/app/dashboard/tables/page.js
-- src/app/dashboard/historique/page.js
-- src/app/dashboard/parametres/page.js
 
 ---
 
 ## FICHIERS À MODIFIER
 
-### 1. src/app/auth/callback/page.js
-**Bug à corriger : Google OAuth redirige vers / au lieu de /dashboard**
+### 1. src/app/auth/login/page.js
+**Connexion email OU téléphone dans le même champ**
 
-Symptôme : après connexion Google, l'utilisateur arrive sur la landing page.
-Il doit cliquer une 2ème fois sur Connexion pour arriver au dashboard.
+Le champ de saisie accepte email ou numéro de téléphone.
+Détecter automatiquement :
+- Si la valeur contient "@" → c'est un email → utiliser signInWithPassword
+- Sinon → c'est un téléphone → afficher message "Connexion par téléphone disponible prochainement, utilisez votre email"
 
-Cause : getSession() est appelé avant que Supabase ait parsé le hash OAuth
-(#access_token=...) présent dans l'URL de retour.
+Pour l'instant on garde email/password mais le champ placeholder dit
+"Email ou numéro de téléphone" et le label dit "Identifiant".
 
-Correction : utiliser onAuthStateChange et attendre l'événement SIGNED_IN.
-Ajouter un await new Promise(resolve => setTimeout(resolve, 500)) avant le
-premier appel pour laisser Supabase parser le hash de l'URL.
+Garder le bouton Google OAuth existant.
+Garder le design sombre actuel (#0D0D0D).
 
 ---
 
 ### 2. src/app/menu/[slug]/[tableId]/page.js
-**Bug à corriger : double commande lors de l'envoi du panier**
+**Bug critique : double commande**
 
-Symptôme : quand le client appuie sur "Envoyer la commande", deux commandes
-identiques sont créées en base de données.
+Lire le fichier existant. Le bug vient de envoyerCommande().
+Même si un état `sending` existe, il faut s'assurer qu'il est bien
+utilisé partout. Vérifier que :
 
-Cause : absence de protection contre le double clic.
-
-Correction : ajouter un état sending (boolean) initialisé à false.
-Le mettre à true au début de envoyerCommande() et false à la fin.
-Désactiver le bouton et bloquer la fonction si sending === true.
-
+1. La fonction envoyerCommande() a cette structure EXACTE :
 ```javascript
 const [sending, setSending] = useState(false)
 
 async function envoyerCommande() {
-  if (sending || !panier.length || !restaurant || !table) return
+  if (sending) return  // bloque immédiatement si déjà en cours
+  if (!panier.length || !restaurant || !table) return
   setSending(true)
   try {
-    // ... logique d'envoi existante ...
+    const { data: cmd, error } = await supabase
+      .from('commandes')
+      .insert({ ... })
+      .select().single()
+    if (error || !cmd) return
+    await supabase.from('commande_items').insert(...)
+    setPanier([])
+    setShowPanierModal(false)
+    setCommandes(prev => [...prev, cmd])
+    const { data: newItems } = await supabase
+      .from('commande_items').select('*').eq('commande_id', cmd.id)
+    setAllItems(prev => ({ ...prev, [cmd.id]: newItems || [] }))
   } finally {
-    setSending(false)
+    setSending(false)  // toujours libérer même en cas d'erreur
   }
 }
 ```
 
-**Vérifier aussi : parcours client après clôture**
+2. Le bouton d'envoi dans ModalPanier doit avoir disabled={sending}
+3. Ne PAS appeler loadCommandes() après envoi — mettre à jour le state local directement
 
-Quand la table est clôturée par le gérant :
-- Le client doit voir l'écran "Merci de votre visite"
-- Puis son reçu numérique avec les bons montants (pas de doublon)
-- Il ne peut plus commander sans rescanner
-- La fonction afficherRecu() ne doit être appelée qu'une seule fois
-  (utiliser un ref recuEnCours pour bloquer les appels multiples)
+**Bug : statut table reste "libre" après scan QR**
+
+Quand un client charge la page menu et qu'il y a des commandes actives,
+mettre à jour le statut de la table :
+```javascript
+// Dans loadData(), après avoir chargé les commandes actives :
+if (cmds && cmds.length > 0) {
+  await supabase.from('tables').update({ statut: 'occupee' }).eq('id', tableId)
+}
+```
 
 ---
 
 ### 3. src/app/dashboard/commandes/page.js
-**Nouvelles fonctionnalités à ajouter**
+**Corrections et nouvelles fonctionnalités**
 
-#### A. Alertes sonores
+#### A. Appel serveur — popup flottant avec nom de table
 
-Ajouter une fonction jouerSon() utilisant Web Audio API (pas de fichier audio externe) :
-
+Ajouter un état :
 ```javascript
-function jouerSon(type) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+const [appelsServeur, setAppelsServeur] = useState([])
+// appelsServeur = [{ id, tableNumero, tableZone, createdAt }]
+```
 
-    if (type === 'serveur') {
-      // Bip aigu court pour appel serveur
-      osc.frequency.value = 880
-      osc.start()
-      osc.stop(ctx.currentTime + 0.3)
-    } else if (type === 'addition') {
-      // Double bip grave pour demande d'addition
-      osc.frequency.value = 440
-      osc.start()
-      osc.stop(ctx.currentTime + 0.2)
-      setTimeout(() => {
-        const ctx2 = new (window.AudioContext || window.webkitAudioContext)()
-        const osc2 = ctx2.createOscillator()
-        const gain2 = ctx2.createGain()
-        osc2.connect(gain2)
-        gain2.connect(ctx2.destination)
-        gain2.gain.setValueAtTime(0.3, ctx2.currentTime)
-        osc2.frequency.value = 440
-        osc2.start()
-        osc2.stop(ctx2.currentTime + 0.2)
-      }, 300)
-    }
-  } catch (e) {
-    console.log('Audio non supporté')
+Dans le channel Realtime, écouter appels_serveur :
+```javascript
+.on('postgres_changes', {
+  event: 'INSERT', schema: 'public', table: 'appels_serveur',
+  filter: `restaurant_id=eq.${restaurant.id}`
+}, async (payload) => {
+  // Récupérer le numéro de table
+  const { data: tbl } = await supabase
+    .from('tables').select('numero, zone').eq('id', payload.new.table_id).single()
+  setAppelsServeur(prev => [...prev, {
+    id: payload.new.id,
+    tableNumero: tbl?.numero,
+    tableZone: tbl?.zone || 'Salle'
+  }])
+  jouerSon('serveur')
+})
+```
+
+Afficher un popup flottant en haut à droite (position: fixed, top: 80px, right: 16px) :
+```
+┌─────────────────────────────┐
+│ 🔔 Appel serveur            │
+│ Table 5 • Terrasse          │
+│                    [Fermer] │
+└─────────────────────────────┘
+```
+Style : fond #1A1A2E, texte blanc, bordure gauche orange #FF6B35,
+border-radius 14px, shadow, animation slideIn depuis la droite.
+Bouton Fermer supprime l'appel de l'état ET marque traite=true dans Supabase.
+
+#### B. Demande d'addition — corriger le déclenchement
+
+PROBLÈME ACTUEL : la bannière addition s'affiche quand le gérant clôture,
+pas quand le client demande l'addition.
+
+CORRECTION : le client appelle demanderPaiement() qui met mode_paiement
+sur les commandes. Le Realtime du gérant doit détecter ce changement.
+
+Dans le channel Realtime commandes, ajouter la détection :
+```javascript
+// Dans le handler postgres_changes sur commandes :
+if (payload.eventType === 'UPDATE' && 
+    payload.new.mode_paiement && 
+    !payload.old.mode_paiement &&
+    !['cloture','annule'].includes(payload.new.statut)) {
+  // Récupérer numéro de table
+  const { data: tbl } = await supabase
+    .from('tables').select('numero').eq('id', payload.new.table_id).single()
+  const modeCfg = MODES_PAIEMENT.find(m => m.id === payload.new.mode_paiement)
+  setDemandesPaiement(prev => [...prev, {
+    id: payload.new.id,
+    tableNumero: tbl?.numero,
+    mode: modeCfg?.label || payload.new.mode_paiement,
+    modeIcon: modeCfg?.icon || '💳'
+  }])
+  jouerSon('addition')
+}
+```
+
+#### C. S'assurer que MODES_PAIEMENT est défini en haut du fichier
+```javascript
+const MODES_PAIEMENT = [
+  { id: 'wave',         label: 'Wave',          icon: '🌊' },
+  { id: 'orange_money', label: 'Orange Money',  icon: '🟠' },
+  { id: 'mtn_money',   label: 'MTN Money',     icon: '💛' },
+  { id: 'cash',        label: 'Espèces',       icon: '💵' },
+  { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
+]
+```
+
+---
+
+### 4. src/app/cuisine/[restaurantId]/page.js
+**Bug : page ne charge pas avec l'ID dans l'URL**
+
+Lire le fichier existant et vérifier :
+1. Le composant reçoit bien params.restaurantId
+2. La requête Supabase filtre bien par restaurant_id = restaurantId
+3. Pas d'erreur de chemin d'import (doit être '../../lib/supabase')
+4. Ajouter un console.log temporaire pour débugger si besoin
+
+Structure attendue :
+```javascript
+export default function CuisinePage({ params }) {
+  const { restaurantId } = params
+  const [commandes, setCommandes] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!restaurantId) return
+    loadCommandes()
+    // Realtime
+  }, [restaurantId])
+
+  async function loadCommandes() {
+    const { data, error } = await supabase
+      .from('commandes')
+      .select('*, tables(numero, zone), commande_items(*)')
+      .eq('restaurant_id', restaurantId)
+      .in('statut', ['en_preparation', 'presque_pret'])
+      .order('created_at', { ascending: true })
+    if (!error) setCommandes(data || [])
+    setLoading(false)
   }
 }
 ```
 
-Déclencher jouerSon('serveur') quand un nouvel appel_serveur arrive via Realtime.
-Déclencher jouerSon('addition') quand mode_paiement est mis à jour sur une commande.
-
-#### B. Bannière notification demande de paiement
-
-Ajouter un état : const [demandesPaiement, setDemandesPaiement] = useState([])
-
-Quand le Realtime détecte qu'une commande a reçu un mode_paiement non null,
-ajouter une entrée dans demandesPaiement avec { tableNumero, modePaiement, cmdId }.
-
-Afficher en haut de la page (sous le header, avant les filtres) :
-- Une bannière orange pour chaque demande
-- Contenu : "🔔 Table X demande l'addition — Mode : Wave"
-- Bouton X pour fermer cette bannière
-- Jouer jouerSon('addition') à l'apparition
-
-#### C. Ticket cuisine imprimable
-
-Quand le gérant clique sur le bouton "Préparer" (passage en en_preparation),
-AVANT de changer le statut, ouvrir un modal avec le ticket cuisine :
-
-Contenu du ticket cuisine (format 80mm, sans prix) :
-```
-╔══════════════════════╗
-║   BON DE COMMANDE    ║
-║   [NOM RESTAURANT]   ║
-║   [DATE] [HEURE]     ║
-║   Table [NUMERO]     ║
-╠══════════════════════╣
-║ 2x Poulet braisé     ║
-║ 1x Coca Cola         ║
-║ 3x Tilapia grillé    ║
-╚══════════════════════╝
-```
-
-Le modal contient :
-- Le ticket formaté visuellement
-- Bouton "🖨️ Imprimer en cuisine" → window.print()
-- Bouton "Ignorer et continuer" → ferme le modal et change le statut
-
-CSS print : @media print — masquer tout sauf #ticket-cuisine-print
-
 ---
 
-## FICHIERS À CRÉER
+### 5. src/app/dashboard/page.js
+**Ajouter compteur d'abonnement visible**
 
-### 4. src/app/cuisine/[restaurantId]/page.js
-**Écran cuisine — accessible sans connexion**
-
-URL : https://maquisapp-xi.vercel.app/cuisine/[restaurantId]
-
-Objectif : page affichée sur une tablette ou téléphone posé en cuisine.
-Affiche en temps réel les commandes en_preparation et presque_pret.
-
-Design :
-- Fond sombre #1A1A2E
-- Polices grandes (titre table : 32px, articles : 22px)
-- Cards blanches larges, lisibles à distance
-- Pas de connexion requise
-
-Comportement :
-- Charger le restaurant par ID depuis Supabase (pas de auth)
-- Afficher toutes les commandes avec statut en_preparation ou presque_pret
-- Rafraîchissement via Supabase Realtime
-- Jouer un son quand une nouvelle commande arrive en préparation
-- Chaque card affiche : "Table X", liste articles avec quantités, heure
+Dans le hero (bannière orange en haut du dashboard), après "Bonjour 👋",
+afficher le nombre de jours restants d'abonnement :
 
 ```javascript
-// Exemple de structure de la page
-export default function CuisinePage({ params }) {
-  const { restaurantId } = params
-  // Pas de vérification d'auth
-  // Charger commandes avec statut in ['en_preparation', 'presque_pret']
-  // Realtime sur ces commandes
-}
+// Calculer les jours restants
+const joursRestants = restaurant?.abonnement_fin
+  ? Math.ceil((new Date(restaurant.abonnement_fin) - new Date()) / (1000 * 60 * 60 * 24))
+  : 0
+
+const statutAbo = restaurant?.abonnement_statut || 'essai'
 ```
 
----
-
-### 5. src/app/abonnement/page.js
-**Page de paiement abonnement**
-
-Affichée automatiquement quand abonnement_statut = 'expire' ou 'suspendu'.
-À vérifier dans chaque page dashboard dans le useEffect de chargement.
-
-Design : fond sombre #0D0D0D, style landing page, orange #FF6B35.
-
-Contenu :
-- Titre : "Votre essai gratuit est terminé"
-- Sous-titre : "Choisissez votre plan pour continuer"
-- Card Plan Mensuel : 15 000 FCFA / mois
-- Card Plan Annuel : 10 000 FCFA / mois (facturé 120 000 FCFA/an — économisez 40 000 FCFA)
-- Numéros de paiement :
-  - Wave : [NUMERO_WAVE]
-  - Orange Money : [NUMERO_ORANGE]
-- Bouton "J'ai effectué mon paiement" → affiche message "Merci ! Votre activation
-  sera confirmée sous 24h. Contactez-nous sur WhatsApp : [NUMERO]"
+Afficher dans le hero :
+- Si statut = 'essai' et joursRestants > 3 :
+  Petit badge vert : "✓ Essai gratuit — J-{joursRestants}"
+- Si statut = 'essai' et joursRestants <= 3 :
+  Badge rouge animé : "⚠️ Essai expire dans {joursRestants} jour(s) — Souscrire"
+  → cliquable → router.push('/abonnement')
+- Si statut = 'actif' :
+  Badge vert : "✓ Abonnement actif — {joursRestants} jours restants"
+- Si statut = 'expire' ou 'suspendu' :
+  Déjà géré par la redirection vers /abonnement
 
 ---
 
 ### 6. src/app/admin/page.js
-**Panel admin Hokma Labs**
+**Vérifier que la page fonctionne**
 
-Accessible uniquement si l'email connecté est 'joelyemian5@gmail.com'.
-Rediriger vers /dashboard si l'email ne correspond pas.
+Lire le fichier existant. S'assurer que :
+1. La vérification de l'email admin est correcte (joelyemian5@gmail.com)
+2. La liste des restaurants s'affiche avec leurs statuts d'abonnement
+3. Les boutons Activer/Suspendre fonctionnent
 
-Contenu :
-- Liste tous les restaurants avec : nom, email, statut abonnement, date fin, nb commandes
-- Pour chaque restaurant :
-  - Bouton "Activer mensuel" → abonnement_statut='actif', abonnement_fin=now+30j, abonnement_plan='mensuel'
-  - Bouton "Activer annuel" → abonnement_statut='actif', abonnement_fin=now+365j, abonnement_plan='annuel'
-  - Bouton "Suspendre" → abonnement_statut='suspendu'
-- Design : même charte que le dashboard (fond #F5F5F5, header #1A1A2E)
+Pour accéder : aller sur https://maquisapp-xi.vercel.app/admin
+quand connecté avec le compte joelyemian5@gmail.com
 
 ---
 
-## SYSTÈME D'ABONNEMENT — LOGIQUE COMPLÈTE
+## NOUVEAU FICHIER À CRÉER
 
-### Tarifs
-- Essai gratuit : 14 jours, toutes fonctionnalités
-- Plan mensuel : 15 000 FCFA / mois
-- Plan annuel : 10 000 FCFA / mois (120 000 FCFA/an)
+### 7. src/app/dashboard/page.js — REFONTE DESIGN (image de référence fournie)
 
-### À l'inscription (src/app/auth/callback/page.js et src/app/auth/register/page.js)
-Quand un nouveau restaurant est créé, initialiser :
-```javascript
-abonnement_statut: 'essai',
-abonnement_fin: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-abonnement_plan: null
-```
+ATTENTION : ne pas casser les fonctionnalités existantes.
+Seulement améliorer le design en s'inspirant de l'app grocery verte de la référence.
 
-### Vérification dans le dashboard (src/app/dashboard/page.js)
-Dans le useEffect de chargement, après avoir récupéré le restaurant :
-```javascript
-const maintenant = new Date()
-const fin = new Date(restaurant.abonnement_fin)
-if (restaurant.abonnement_statut === 'expire' || 
-    restaurant.abonnement_statut === 'suspendu' ||
-    (restaurant.abonnement_statut === 'essai' && fin < maintenant)) {
-  router.push('/abonnement')
-  return
-}
-// Bannière J-3 avant expiration
-const joursRestants = Math.ceil((fin - maintenant) / (1000 * 60 * 60 * 24))
-if (joursRestants <= 3 && joursRestants > 0) {
-  // Afficher bannière d'avertissement dans le dashboard
-}
-```
+Changements visuels demandés :
+1. Header avec photo/image du restaurant en haut (comme le hero banner de l'app référence)
+   → Utiliser restaurant.logo_url si disponible, sinon un gradient orange
+   → Hauteur 180px, image en fond avec overlay sombre pour lisibilité
+   → Nom du restaurant en blanc par dessus, grand et bold
+
+2. Cards catégories dans la navigation → ajouter des icônes colorées dans des cercles
+   (comme les catégories Drink/Fruits/Vegeta dans l'image)
+   → Commandes : cercle orange 🍽️
+   → Menu : cercle vert 🥘
+   → Tables : cercle bleu 🪑
+   → Historique : cercle violet 📊
+
+3. Cards statistiques → plus de relief, légère ombre, valeurs plus grandes
+
+4. Conserver TOUTES les fonctionnalités :
+   - Commande manuelle
+   - Liste commandes en cours
+   - Navigation vers les pages
+   - Compteur abonnement (ajouté dans cette spec)
 
 ---
 
-## PARCOURS COMPLET VALIDÉ
+## RÉCAPITULATIF DES BUGS ET FONCTIONNALITÉS
 
-### Parcours Client
-1. Scanne le QR code de sa table
-2. Voit le menu (catégories + plats avec photos et prix)
-3. Choisit ses plats et envoie sa commande
-4. Voit le statut en temps réel (En attente → En préparation → Presque prêt → Servi)
-5. Peut passer une nouvelle commande supplémentaire à tout moment
-6. Peut appeler le serveur via le bouton Serveur
-7. Quand il veut payer : clique "Demander l'addition" et choisit son mode de paiement
-8. Le serveur vient encaisser
-9. Le gérant clôture la table
-10. Client voit écran "Merci de votre visite" + reçu numérique téléchargeable
-11. Ne peut plus commander — doit rescanner pour une nouvelle session
-
-### Parcours Gérant
-1. Reçoit alerte visuelle + sonore pour nouvelle commande
-2. Ouvre la commande, vérifie les articles
-3. Supprime les articles non disponibles si besoin
-4. Clique "Valider" → le client est notifié (statut change)
-5. Clique "En préparation" → ticket cuisine s'imprime, la cuisine reçoit la commande
-6. Clique "Presque prêt" → le client est notifié
-7. Clique "Servi" → le plat est posé sur la table
-8. Reçoit alerte sonore + bannière quand le client demande l'addition
-9. Envoie le serveur encaisser avec le bon moyen de paiement
-10. Clique "Encaisser et clôturer" → choisit mode paiement → confirme
-11. Ticket de caisse affiché pour impression
-12. Table libérée automatiquement
-13. Client reçoit son reçu numérique
+| # | Fichier | Type | Description |
+|---|---------|------|-------------|
+| 1 | auth/login | MODIFIER | Champ email OU téléphone (détection auto) |
+| 2 | menu/[slug]/[tableId] | BUG FIX | Double commande (état sending strict) |
+| 3 | menu/[slug]/[tableId] | BUG FIX | Statut table reste "libre" après scan |
+| 4 | dashboard/commandes | BUG FIX | Appel serveur : popup flottant avec numéro table |
+| 5 | dashboard/commandes | BUG FIX | Addition : bannière au bon moment (quand client demande, pas à la clôture) |
+| 6 | cuisine/[restaurantId] | BUG FIX | Page ne charge pas avec l'ID |
+| 7 | dashboard/page.js | FEATURE | Compteur jours abonnement dans le hero |
+| 8 | admin/page.js | VÉRIFIER | Fonctionnement panel admin |
+| 9 | dashboard/page.js | DESIGN | Refonte visuelle inspirée image référence |
 
 ---
 
-## COMMANDES GIT
+## FICHIERS À NE PAS TOUCHER
+
+- src/app/page.js (landing)
+- src/app/auth/register/page.js
+- src/app/auth/callback/page.js
+- src/app/dashboard/menu/page.js
+- src/app/dashboard/tables/page.js
+- src/app/dashboard/historique/page.js
+- src/app/dashboard/parametres/page.js
+- src/app/abonnement/page.js
+
+---
+
+## APRÈS LES MODIFICATIONS
 
 ```bash
 git add .
-git commit -m "description"
+git commit -m "fix: double commande + appel serveur + addition + cuisine + design dashboard"
 git push origin main
 ```
-Vercel redéploie automatiquement après chaque push.

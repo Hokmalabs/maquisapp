@@ -75,6 +75,7 @@ export default function CommandesPage() {
   const [demandesPaiement, setDemandesPaiement] = useState([])
   const [showBonCuisine, setShowBonCuisine] = useState(false)
   const [bonCuisineData, setBonCuisineData] = useState(null)
+  const [appelsServeur, setAppelsServeur] = useState([])
 
   useEffect(() => { loadData() }, [])
 
@@ -84,27 +85,44 @@ export default function CommandesPage() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'commandes',
         filter: `restaurant_id=eq.${restaurant.id}`
-      }, (payload) => {
-        // Détecter une demande de paiement (mode_paiement vient d'être renseigné)
-        if (payload.eventType === 'UPDATE' && payload.new?.mode_paiement && !payload.old?.mode_paiement) {
-          jouerSon('addition')
+      }, async (payload) => {
+        // Détecter une demande de paiement (mode_paiement vient d'être renseigné par le client)
+        if (
+          payload.eventType === 'UPDATE' &&
+          payload.new?.mode_paiement &&
+          !payload.old?.mode_paiement &&
+          !['cloture', 'annule'].includes(payload.new.statut)
+        ) {
           const cmdId = payload.new.id
-          supabase.from('commandes').select('*, tables(numero)').eq('id', cmdId).single()
-            .then(({ data: cmd }) => {
-              if (cmd) {
-                setDemandesPaiement(prev => {
-                  if (prev.find(d => d.cmdId === cmdId)) return prev
-                  return [...prev, { tableNumero: cmd.tables?.numero, modePaiement: payload.new.mode_paiement, cmdId }]
-                })
-              }
-            })
+          const { data: tbl } = await supabase
+            .from('tables').select('numero').eq('id', payload.new.table_id).single()
+          const modeCfg = MODES_PAIEMENT.find(m => m.id === payload.new.mode_paiement)
+          setDemandesPaiement(prev => {
+            if (prev.find(d => d.id === cmdId)) return prev
+            return [...prev, {
+              id: cmdId,
+              tableNumero: tbl?.numero,
+              mode: modeCfg?.label || payload.new.mode_paiement,
+              modeIcon: modeCfg?.icon || '💳',
+            }]
+          })
+          jouerSon('addition')
         }
         refreshCommandes(restaurant.id)
       })
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'appels_serveur',
         filter: `restaurant_id=eq.${restaurant.id}`
-      }, () => { jouerSon('serveur') })
+      }, async (payload) => {
+        const { data: tbl } = await supabase
+          .from('tables').select('numero, zone').eq('id', payload.new.table_id).single()
+        setAppelsServeur(prev => [...prev, {
+          id: payload.new.id,
+          tableNumero: tbl?.numero,
+          tableZone: tbl?.zone || 'Salle',
+        }])
+        jouerSon('serveur')
+      })
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [restaurant])
@@ -294,6 +312,7 @@ export default function CommandesPage() {
         @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
         @keyframes fadeIn { from{opacity:0} to{opacity:1} }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+        @keyframes slideIn { from{transform:translateX(120%);opacity:0} to{transform:translateX(0);opacity:1} }
         .cmd-card:active { transform: scale(0.98); }
         .btn:active { transform: scale(0.97); opacity:.9; }
         @media print {
@@ -322,18 +341,15 @@ export default function CommandesPage() {
       </div>
 
       {/* BANNIÈRES DEMANDES DE PAIEMENT */}
-      {demandesPaiement.map((d) => {
-        const mode = MODES_PAIEMENT.find(m => m.id === d.modePaiement)
-        return (
-          <div key={d.cmdId} style={{ margin: '8px 16px 0', background: C.primary, borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>
-              🔔 Table {d.tableNumero} demande l'addition — Mode : {mode ? `${mode.icon} ${mode.label}` : d.modePaiement}
-            </span>
-            <button onClick={() => setDemandesPaiement(prev => prev.filter(x => x.cmdId !== d.cmdId))}
-              style={{ background: 'rgba(255,255,255,.25)', border: 'none', borderRadius: 7, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
-          </div>
-        )
-      })}
+      {demandesPaiement.map((d) => (
+        <div key={d.id} style={{ margin: '8px 16px 0', background: C.primary, borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>
+            🔔 Table {d.tableNumero} demande l'addition — {d.modeIcon} {d.mode}
+          </span>
+          <button onClick={() => setDemandesPaiement(prev => prev.filter(x => x.id !== d.id))}
+            style={{ background: 'rgba(255,255,255,.25)', border: 'none', borderRadius: 7, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
+        </div>
+      ))}
 
       {/* FILTRES */}
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 16px 0' }}>
@@ -468,6 +484,24 @@ export default function CommandesPage() {
       {showTicket && ticketData && (
         <TicketCaisse data={ticketData} onClose={() => setShowTicket(false)} />
       )}
+
+      {/* POPUP APPELS SERVEUR */}
+      <div style={{ position: 'fixed', top: 80, right: 16, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 260 }}>
+        {appelsServeur.map((a) => (
+          <div key={a.id} style={{ background: C.dark, borderRadius: 14, padding: '12px 14px', borderLeft: `4px solid ${C.primary}`, boxShadow: '0 4px 20px rgba(0,0,0,.35)', animation: 'slideIn .3s ease' }}>
+            <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, marginBottom: 4 }}>🔔 Appel serveur</div>
+            <div style={{ color: 'rgba(255,255,255,.7)', fontSize: 12 }}>Table {a.tableNumero} • {a.tableZone}</div>
+            <button
+              onClick={async () => {
+                await supabase.from('appels_serveur').update({ traite: true }).eq('id', a.id)
+                setAppelsServeur(prev => prev.filter(x => x.id !== a.id))
+              }}
+              style={{ marginTop: 8, background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Fermer
+            </button>
+          </div>
+        ))}
+      </div>
 
       {showBonCuisine && bonCuisineData && (
         <BonCuisine

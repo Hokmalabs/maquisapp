@@ -73,20 +73,26 @@ export default function MenuPage({ params }) {
     const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).eq('disponible', true).order('ordre');
     setPlats(pls || []);
 
-    await loadCommandes();
+    await loadCommandes(tableId);
     setLoading(false);
   }
 
-  async function loadCommandes() {
+  async function loadCommandes(tid) {
+    const id = tid || tableId;
     const { data: cmds } = await supabase
       .from('commandes')
       .select('*')
-      .eq('table_id', tableId)
+      .eq('table_id', id)
       .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'])
       .order('created_at', { ascending: true });
 
     const cmdList = cmds || [];
     setCommandes(cmdList);
+
+    // Marquer la table comme occupée s'il y a des commandes actives
+    if (cmdList.length > 0) {
+      await supabase.from('tables').update({ statut: 'occupee' }).eq('id', id);
+    }
 
     // ─── FIX BUG 4 : charger les items UNE SEULE FOIS avec Promise.all ──────
     if (cmdList.length) {

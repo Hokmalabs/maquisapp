@@ -250,30 +250,74 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── HERO ─────────────────────────────────────────────────────── */}
-      <div style={{ margin: '14px 16px 0', borderRadius: 18, background: 'linear-gradient(135deg, #FF6B35 0%, #FF8C42 60%, #FFB347 100%)', padding: '18px', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', right: -10, top: -10, fontSize: 72, opacity: .12 }}>🍽️</div>
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,.85)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Tableau de bord</div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 3, lineHeight: 1.25 }}>Bonjour 👋</div>
-        <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(255,255,255,.8)' }}>{today.charAt(0).toUpperCase() + today.slice(1)}</div>
-      </div>
+      {/* ── HERO BANNER ──────────────────────────────────────────────── */}
+      {(() => {
+        const joursRestants = restaurant?.abonnement_fin
+          ? Math.ceil((new Date(restaurant.abonnement_fin) - new Date()) / (1000 * 60 * 60 * 24))
+          : 0
+        const statutAbo = restaurant?.abonnement_statut || 'essai'
+        const hasLogo = !!restaurant?.logo_url
+        return (
+          <div style={{
+            margin: '14px 16px 0',
+            borderRadius: 22,
+            height: 180,
+            position: 'relative',
+            overflow: 'hidden',
+            background: hasLogo
+              ? `url(${restaurant.logo_url}) center/cover no-repeat`
+              : 'linear-gradient(135deg, #FF6B35 0%, #E85520 50%, #1A1A2E 100%)',
+          }}>
+            {/* Overlay sombre pour lisibilité */}
+            <div style={{ position: 'absolute', inset: 0, background: hasLogo ? 'linear-gradient(to top, rgba(0,0,0,.75) 0%, rgba(0,0,0,.35) 100%)' : 'linear-gradient(135deg, rgba(0,0,0,.2) 0%, rgba(0,0,0,.05) 100%)' }}></div>
+            {/* Déco fond si pas de logo */}
+            {!hasLogo && <div style={{ position: 'absolute', right: -20, top: -20, fontSize: 110, opacity: .08, pointerEvents: 'none' }}>🍽️</div>}
+            {/* Contenu */}
+            <div style={{ position: 'absolute', inset: 0, padding: '20px 20px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,.7)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 4 }}>Tableau de bord</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.2, textShadow: '0 2px 8px rgba(0,0,0,.3)' }}>{restaurant?.nom}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.75)', marginTop: 3 }}>{today.charAt(0).toUpperCase() + today.slice(1)}</div>
+              <div style={{ marginTop: 10 }}>
+                {statutAbo === 'actif' && (
+                  <span style={{ background: 'rgba(0,200,81,.3)', backdropFilter: 'blur(4px)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '4px 12px', border: '1px solid rgba(0,200,81,.4)' }}>
+                    ✓ Abonnement actif — {joursRestants}j restant{joursRestants > 1 ? 's' : ''}
+                  </span>
+                )}
+                {statutAbo === 'essai' && joursRestants > 3 && (
+                  <span style={{ background: 'rgba(0,200,81,.3)', backdropFilter: 'blur(4px)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '4px 12px', border: '1px solid rgba(0,200,81,.4)' }}>
+                    ✓ Essai gratuit — J-{joursRestants}
+                  </span>
+                )}
+                {statutAbo === 'essai' && joursRestants <= 3 && joursRestants > 0 && (
+                  <span onClick={() => router.push('/abonnement')} style={{ background: 'rgba(255,59,48,.4)', backdropFilter: 'blur(4px)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '4px 12px', cursor: 'pointer', border: '1px solid rgba(255,59,48,.5)', animation: 'pulse 1.5s infinite' }}>
+                    ⚠️ Essai expire dans {joursRestants}j — Souscrire
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── STATS ────────────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '14px 16px 0' }}>
-        <div style={{ background: C.white, borderRadius: 16, padding: '16px', boxShadow: `0 2px 10px ${C.shadow}`, gridColumn: 'span 2' }}>
-          <div style={{ fontSize: 11, color: C.gray, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .5 }}>CA du jour</div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: C.primary }}>{formatCFA(stats.ca_jour)}</div>
+        <div style={{ background: C.white, borderRadius: 18, padding: '18px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 11, color: C.gray, marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .6 }}>CA du jour</div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: C.primary, letterSpacing: -.5 }}>{formatCFA(stats.ca_jour)}</div>
+          </div>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg, #FF6B35, #FF8C42)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, boxShadow: '0 4px 14px rgba(255,107,53,.35)' }}>💰</div>
         </div>
         {[
-          { val: stats.commandes, label: 'Commandes actives', color: C.primary, icon: '📋' },
-          { val: stats.plats, label: 'Plats disponibles', color: C.green, icon: '🍛' },
-          { val: stats.tables, label: 'Tables actives', color: '#5B8DEF', icon: '🪑' },
+          { val: stats.commandes, label: 'Commandes actives', color: C.primary, icon: '📋', bg: '#FF6B35' },
+          { val: stats.plats, label: 'Plats disponibles', color: C.green, icon: '🍛', bg: '#00C851' },
+          { val: stats.tables, label: 'Tables actives', color: '#5B8DEF', icon: '🪑', bg: '#5B8DEF' },
         ].map((s, i) => (
-          <div key={i} style={{ background: C.white, borderRadius: 16, padding: '14px', boxShadow: `0 2px 10px ${C.shadow}`, gridColumn: i === 2 ? 'span 2' : 'span 1', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: s.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{s.icon}</div>
+          <div key={i} style={{ background: C.white, borderRadius: 18, padding: '16px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', gridColumn: i === 2 ? 'span 2' : 'span 1', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0, boxShadow: `0 4px 12px ${s.bg}44` }}>{s.icon}</div>
             <div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.val}</div>
-              <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>{s.label}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: -.5 }}>{s.val}</div>
+              <div style={{ fontSize: 11, color: C.gray, marginTop: 1, fontWeight: 500 }}>{s.label}</div>
             </div>
           </div>
         ))}
@@ -328,27 +372,27 @@ export default function DashboardPage() {
 
       {/* ── NAVIGATION GRID ──────────────────────────────────────────── */}
       <div style={{ margin: '20px 16px 0' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Navigation</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 12 }}>Navigation</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
-            { icon: '📋', label: 'Commandes', desc: 'Suivi temps réel', path: '/dashboard/commandes', accent: '#FFF0EB' },
-            { icon: '🍛', label: 'Menu', desc: 'Plats & catégories', path: '/dashboard/menu', accent: '#E8F5E9' },
-            { icon: '🪑', label: 'Tables & QR', desc: 'Gérer les tables', path: '/dashboard/tables', accent: '#EBF5FB' },
-            { icon: '📊', label: 'Historique', desc: 'CA & rapports', path: '/dashboard/historique', accent: '#F4ECFF' },
+            { icon: '🍽️', label: 'Commandes', desc: 'Suivi temps réel', path: '/dashboard/commandes', circleColor: '#FF6B35', shadow: 'rgba(255,107,53,.35)' },
+            { icon: '🥘', label: 'Menu', desc: 'Plats & catégories', path: '/dashboard/menu', circleColor: '#00C851', shadow: 'rgba(0,200,81,.3)' },
+            { icon: '🪑', label: 'Tables & QR', desc: 'Gérer les tables', path: '/dashboard/tables', circleColor: '#5B8DEF', shadow: 'rgba(91,141,239,.3)' },
+            { icon: '📊', label: 'Historique', desc: 'CA & rapports', path: '/dashboard/historique', circleColor: '#9B59B6', shadow: 'rgba(155,89,182,.3)' },
           ].map(item => (
             <button key={item.path} className="card-btn" onClick={() => router.push(item.path)}
-              style={{ background: C.white, borderRadius: 16, padding: '16px', boxShadow: `0 2px 10px ${C.shadow}`, textAlign: 'left', cursor: 'pointer', border: 'none', fontFamily: 'inherit', transition: 'transform .15s' }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: item.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, marginBottom: 10 }}>{item.icon}</div>
+              style={{ background: C.white, borderRadius: 18, padding: '18px 16px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', textAlign: 'left', cursor: 'pointer', border: 'none', fontFamily: 'inherit', transition: 'transform .15s' }}>
+              <div style={{ width: 52, height: 52, borderRadius: '50%', background: item.circleColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: 12, boxShadow: `0 4px 14px ${item.shadow}` }}>{item.icon}</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{item.label}</div>
-              <div style={{ fontSize: 11, color: C.gray, marginTop: 2 }}>{item.desc}</div>
+              <div style={{ fontSize: 11, color: C.gray, marginTop: 3 }}>{item.desc}</div>
             </button>
           ))}
           <button className="card-btn" onClick={() => router.push('/dashboard/parametres')}
-            style={{ gridColumn: 'span 2', background: C.white, borderRadius: 16, padding: '14px 16px', boxShadow: `0 2px 10px ${C.shadow}`, textAlign: 'left', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'inherit', transition: 'transform .15s' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: C.grayLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>⚙️</div>
+            style={{ gridColumn: 'span 2', background: C.white, borderRadius: 18, padding: '16px 18px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', textAlign: 'left', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', gap: 16, fontFamily: 'inherit', transition: 'transform .15s' }}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: C.dark, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0, boxShadow: '0 4px 14px rgba(26,26,46,.3)' }}>⚙️</div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>Paramètres restaurant</div>
-              <div style={{ fontSize: 11, color: C.gray, marginTop: 2 }}>Configuration & profil</div>
+              <div style={{ fontSize: 11, color: C.gray, marginTop: 3 }}>Configuration & profil</div>
             </div>
           </button>
         </div>

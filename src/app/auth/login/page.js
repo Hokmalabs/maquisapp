@@ -11,7 +11,7 @@ const C = {
 
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail]       = useState('')
+  const [identifiant, setIdentifiant] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
@@ -21,9 +21,16 @@ export default function LoginPage() {
   // ── Email / Password ────────────────────────────────────────────────────
   const handleLogin = async (e) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+
+    // Détection : téléphone si pas de "@"
+    if (!identifiant.includes('@')) {
+      setError('Connexion par téléphone disponible prochainement. Utilisez votre email.')
+      return
+    }
+
+    setLoading(true)
+    const { error } = await supabase.auth.signInWithPassword({ email: identifiant, password })
     if (error) {
       setError('Email ou mot de passe incorrect')
       setLoading(false)
@@ -98,15 +105,15 @@ export default function LoginPage() {
         {/* Séparateur */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
           <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,.1)' }}></div>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', fontWeight: 500 }}>ou avec email</span>
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', fontWeight: 500 }}>ou avec identifiant</span>
           <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,.1)' }}></div>
         </div>
 
         {/* Formulaire */}
         <form onSubmit={handleLogin}>
           <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.5)', display: 'block', marginBottom: 6 }}>Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="votre@email.com" required
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.5)', display: 'block', marginBottom: 6 }}>Identifiant</label>
+            <input type="text" value={identifiant} onChange={e => setIdentifiant(e.target.value)} placeholder="Email ou numéro de téléphone" required
               style={{ width: '100%', padding: '13px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.12)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 14, fontFamily: 'inherit', transition: 'border-color .2s' }} />
           </div>
 
