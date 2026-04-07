@@ -37,7 +37,7 @@ export default function LandingPage() {
       `}</style>
 
       {/* ── NAV ─────────────────────────────────────────────────────── */}
-      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: scrollY > 40 ? 'rgba(13,13,13,.92)' : 'transparent', backdropFilter: scrollY > 40 ? 'blur(20px)' : 'none', borderBottom: scrollY > 40 ? '1px solid rgba(255,255,255,.06)' : 'none', transition: 'all .4s' }}>
+      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, paddingTop: 'max(env(safe-area-inset-top), 12px)', paddingBottom: 0, paddingLeft: 24, paddingRight: 24, minHeight: 64, width: '100%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: scrollY > 40 ? 'rgba(13,13,13,.92)' : 'transparent', backdropFilter: scrollY > 40 ? 'blur(20px)' : 'none', borderBottom: scrollY > 40 ? '1px solid rgba(255,255,255,.06)' : 'none', transition: 'all .4s' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg,#FF6B35,#FF4500)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🍽️</div>
           <span style={{ fontSize: 18, fontWeight: 800 }}>MaquisApp</span>
