@@ -21,7 +21,7 @@ export default function MenuPage() {
   const [editingCat, setEditingCat] = useState(null)
   const [editingPlat, setEditingPlat] = useState(null)
   const [catForm, setCatForm] = useState({ nom: '' })
-  const [platForm, setPlatForm] = useState({ nom: '', description: '', prix: '', image_url: '', disponible: true, categorie_id: '' })
+  const [platForm, setPlatForm] = useState({ nom: '', description: '', prix: '', image_url: '', image_preview: '', disponible: true, categorie_id: '' })
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
 
@@ -72,10 +72,10 @@ export default function MenuPage() {
   function openPlatModal(plat = null) {
     if (plat) {
       setEditingPlat(plat)
-      setPlatForm({ nom: plat.nom, description: plat.description || '', prix: plat.prix, image_url: plat.image_url || '', disponible: plat.disponible, categorie_id: plat.categorie_id })
+      setPlatForm({ nom: plat.nom, description: plat.description || '', prix: plat.prix, image_url: plat.image_url || '', image_preview: '', disponible: plat.disponible, categorie_id: plat.categorie_id })
     } else {
       setEditingPlat(null)
-      setPlatForm({ nom: '', description: '', prix: '', image_url: '', disponible: true, categorie_id: activeCat || '' })
+      setPlatForm({ nom: '', description: '', prix: '', image_url: '', image_preview: '', disponible: true, categorie_id: activeCat || '' })
     }
     setShowPlatModal(true)
   }
@@ -108,15 +108,39 @@ export default function MenuPage() {
   }
 
   async function uploadImage(e) {
-    const file = e.target.files[0]
+    const file = e.target.files?.[0]
     if (!file) return
-    const ext = file.name.split('.').pop()
-    const path = `plats/${Date.now()}.${ext}`
-    const { error } = await supabase.storage.from('images').upload(path, file)
-    if (!error) {
-      const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(path)
-      setPlatForm(prev => ({ ...prev, image_url: publicUrl }))
+
+    if (!file.type.startsWith('image/')) {
+      alert('Veuillez sélectionner une image')
+      return
     }
+
+    // Preview immédiate
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setPlatForm(prev => ({ ...prev, image_preview: ev.target.result }))
+    }
+    reader.readAsDataURL(file)
+
+    // Upload vers Supabase Storage
+    // Note: le bucket 'images' doit exister dans Supabase Storage et être PUBLIC.
+    const ext = file.name.split('.').pop() || 'jpg'
+    const filename = `plat_${Date.now()}_${Math.random().toString(36).substr(2, 6)}.${ext}`
+    const path = `plats/${filename}`
+
+    const { error } = await supabase.storage
+      .from('images')
+      .upload(path, file, { contentType: file.type, upsert: false })
+
+    if (error) {
+      console.error('Upload error:', error)
+      alert('Erreur upload : ' + error.message)
+      return
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(path)
+    setPlatForm(prev => ({ ...prev, image_url: publicUrl }))
   }
 
   const platsDeCat = plats.filter(p => p.categorie_id === activeCat)
@@ -274,13 +298,13 @@ export default function MenuPage() {
               {/* Image */}
               <div style={{ marginBottom: 14 }}>
                 <div onClick={() => fileRef.current?.click()}
-                  style={{ width: '100%', height: 140, borderRadius: 14, border: `2px dashed ${C.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden', background: C.grayLight }}>
-                  {platForm.image_url
-                    ? <img src={platForm.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : <><div style={{ fontSize: 30 }}>📷</div><div style={{ fontSize: 12, color: C.gray, marginTop: 6 }}>Ajouter une photo</div></>
+                  style={{ width: '100%', height: 140, borderRadius: 14, border: `2px dashed ${C.border}`, cursor: 'pointer', overflow: 'hidden', background: C.grayLight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  {(platForm.image_preview || platForm.image_url)
+                    ? <img src={platForm.image_preview || platForm.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <><div style={{ fontSize: 30 }}>📷</div><div style={{ fontSize: 12, color: C.gray, marginTop: 6 }}>Appuyez pour ajouter une photo</div></>
                   }
                 </div>
-                <input ref={fileRef} type="file" accept="image/*" onChange={uploadImage} style={{ display: 'none' }} />
+                <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={uploadImage} style={{ display: 'none' }} />
               </div>
               {/* Catégorie */}
               <select value={platForm.categorie_id} onChange={e => setPlatForm(p => ({ ...p, categorie_id: e.target.value }))}

@@ -20,14 +20,6 @@ const STATUT_CONFIG = {
   annule:         { label: 'Annulée',        color: '#FF3B30', icon: '❌', bg: '#FFEBEE' },
 };
 
-const MODES_PAIEMENT = [
-  { id: 'wave',         label: 'Wave',          icon: '🌊' },
-  { id: 'orange_money', label: 'Orange Money',  icon: '🟠' },
-  { id: 'mtn_money',   label: 'MTN Money',     icon: '💛' },
-  { id: 'cash',        label: 'Espèces',       icon: '💵' },
-  { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
-];
-
 export default function MenuPage({ params }) {
   const { slug, tableId } = params;
 
@@ -43,15 +35,15 @@ export default function MenuPage({ params }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showPanierModal, setShowPanierModal]     = useState(false);
   const [showDetailCmd, setShowDetailCmd]         = useState(null);
-  const [showPaiementModal, setShowPaiementModal] = useState(false);
   const [showRecu, setShowRecu]       = useState(false);
   const [recuData, setRecuData]       = useState(null);
   const [appelEnvoye, setAppelEnvoye] = useState(false);
-  const [modePaiement, setModePaiement] = useState('');
+  const [demandeEnvoyee, setDemandeEnvoyee] = useState(false);
   const [sending, setSending] = useState(false);
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
   const catRefs = useRef({});
+  const sendingRef = useRef(false);
   // ─── FIX BUG 4 : ref pour éviter les appels multiples à afficherRecu ──────
   const recuEnCours = useRef(false);
 
@@ -127,7 +119,11 @@ export default function MenuPage({ params }) {
             if (exists) {
               return prev.map(c => c.id === payload.new.id ? { ...payload.new } : c);
             }
-            return [...prev, payload.new];
+            // Ne pas ajouter si on vient d'envoyer (évite le doublon)
+            if (!sendingRef.current) {
+              return [...prev, payload.new];
+            }
+            return prev;
           });
           // Charger les items de cette commande seulement si elle est nouvelle
           setAllItems(prev => {
@@ -240,7 +236,8 @@ export default function MenuPage({ params }) {
   }
 
   async function envoyerCommande() {
-    if (sending || !panier.length || !restaurant || !table) return;
+    if (sendingRef.current || !panier.length || !restaurant || !table) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       const { data: cmd, error } = await supabase
@@ -251,23 +248,31 @@ export default function MenuPage({ params }) {
       await supabase.from('commande_items').insert(
         panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, quantite: i.quantite, note: i.note || '' }))
       );
+      await supabase.from('tables').update({ statut: 'occupee' }).eq('id', table.id);
       setPanier([]);
       setShowPanierModal(false);
-      setCommandes(prev => [...prev, cmd]);
+      setCommandes(prev => {
+        if (prev.find(c => c.id === cmd.id)) return prev;
+        return [...prev, cmd];
+      });
       const { data: newItems } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
       setAllItems(prev => ({ ...prev, [cmd.id]: newItems || [] }));
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
 
-  async function demanderPaiement() {
-    if (!modePaiement || !commandes.length) return;
-    for (const cmd of commandes) {
-      await supabase.from('commandes').update({ mode_paiement: modePaiement }).eq('id', cmd.id);
-    }
-    setShowPaiementModal(false);
-    setModePaiement('');
+  async function demanderAddition() {
+    if (!commandes.length || demandeEnvoyee) return;
+    await supabase.from('appels_serveur').insert({
+      restaurant_id: restaurant.id,
+      table_id: table.id,
+      traite: false,
+      type: 'addition'
+    });
+    setDemandeEnvoyee(true);
+    setTimeout(() => setDemandeEnvoyee(false), 60000);
   }
 
   async function appelServeur() {
@@ -360,7 +365,7 @@ export default function MenuPage({ params }) {
                   index={idx + 1}
                   total={commandes.length}
                   onVoirDetails={() => setShowDetailCmd(cmd)}
-                  onPayer={() => setShowPaiementModal(true)}
+                  onPayer={demanderAddition}
                 />
               </div>
             ))}
@@ -371,9 +376,9 @@ export default function MenuPage({ params }) {
               </div>
             )}
             {toutesServies && (
-              <button onClick={() => setShowPaiementModal(true)}
-                style={{ width: '100%', background: C.green, border: 'none', borderRadius: 12, padding: '12px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
-                💳 Demander l'addition — {totalGlobal.toLocaleString()} F
+              <button onClick={demanderAddition} disabled={demandeEnvoyee}
+                style={{ width: '100%', background: demandeEnvoyee ? C.green : C.primary, border: 'none', borderRadius: 12, padding: '12px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: demandeEnvoyee ? 'not-allowed' : 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
+                {demandeEnvoyee ? '✅ Addition demandée !' : '💳 Demander l\'addition'}
               </button>
             )}
           </div>
@@ -461,12 +466,6 @@ export default function MenuPage({ params }) {
           onClose={() => setPlatDetail(null)}
           onAdd={() => ajouterAuPanier(platDetail)}
           onRemove={() => retirerDuPanier(platDetail.id)} />
-      )}
-      {showPaiementModal && (
-        <ModalPaiement commandes={commandes} total={totalGlobal}
-          modePaiement={modePaiement} setModePaiement={setModePaiement}
-          onClose={() => setShowPaiementModal(false)}
-          onConfirm={demanderPaiement} />
       )}
       {showDetailCmd && (
         <ModalDetailCommande cmd={showDetailCmd} items={allItems[showDetailCmd.id] || []}
@@ -659,32 +658,6 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
   );
 }
 
-function ModalPaiement({ commandes, total, modePaiement, setModePaiement, onClose, onConfirm }) {
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'flex-end' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
-      <div style={{ position: 'relative', width: '100%', background: '#fff', borderRadius: '22px 22px 0 0', padding: '18px 18px 40px', animation: 'slideUp .3s ease' }}>
-        <div style={{ fontSize: 17, fontWeight: 800, color: '#1A1A2E', marginBottom: 4 }}>Mode de paiement</div>
-        <div style={{ fontSize: 12, color: '#8A8A9A', marginBottom: 18 }}>
-          Total : {total.toLocaleString()} FCFA
-          {commandes.length > 1 && <span style={{ color: '#FF6B35', marginLeft: 6 }}>({commandes.length} commandes)</span>}
-        </div>
-        {MODES_PAIEMENT.map(m => (
-          <button key={m.id} onClick={() => setModePaiement(m.id)}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, border: `2px solid ${modePaiement === m.id ? '#FF6B35' : '#E8E8F0'}`, background: modePaiement === m.id ? '#FFF0EB' : '#fff', marginBottom: 9, cursor: 'pointer', fontFamily: 'inherit' }}>
-            <span style={{ fontSize: 22 }}>{m.icon}</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1A2E' }}>{m.label}</span>
-            {modePaiement === m.id && <span style={{ marginLeft: 'auto', color: '#FF6B35', fontSize: 16 }}>✓</span>}
-          </button>
-        ))}
-        <button onClick={onConfirm} disabled={!modePaiement}
-          style={{ width: '100%', background: modePaiement ? '#FF6B35' : '#F0F0F5', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: modePaiement ? '#fff' : '#8A8A9A', cursor: modePaiement ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
-          Confirmer — le serveur viendra encaisser
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function RecuNumerique({ data, onClose, tableCloturee }) {
   const { restaurant, table, items, total, modePaiement, date, commandes } = data;

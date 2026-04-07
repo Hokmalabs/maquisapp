@@ -116,12 +116,22 @@ export default function CommandesPage() {
       }, async (payload) => {
         const { data: tbl } = await supabase
           .from('tables').select('numero, zone').eq('id', payload.new.table_id).single()
-        setAppelsServeur(prev => [...prev, {
-          id: payload.new.id,
-          tableNumero: tbl?.numero,
-          tableZone: tbl?.zone || 'Salle',
-        }])
-        jouerSon('serveur')
+        if (payload.new.type === 'addition') {
+          setDemandesPaiement(prev => [...prev, {
+            id: payload.new.id,
+            tableNumero: tbl?.numero,
+            tableZone: tbl?.zone || 'Salle',
+            type: 'addition'
+          }])
+          jouerSon('addition')
+        } else {
+          setAppelsServeur(prev => [...prev, {
+            id: payload.new.id,
+            tableNumero: tbl?.numero,
+            tableZone: tbl?.zone || 'Salle',
+          }])
+          jouerSon('serveur')
+        }
       })
       .subscribe()
     return () => supabase.removeChannel(ch)
@@ -342,11 +352,23 @@ export default function CommandesPage() {
 
       {/* BANNIÈRES DEMANDES DE PAIEMENT */}
       {demandesPaiement.map((d) => (
-        <div key={d.id} style={{ margin: '8px 16px 0', background: C.primary, borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>
-            🔔 Table {d.tableNumero} demande l'addition — {d.modeIcon} {d.mode}
-          </span>
-          <button onClick={() => setDemandesPaiement(prev => prev.filter(x => x.id !== d.id))}
+        <div key={d.id} style={{ margin: '8px 16px 0', background: d.type === 'addition' ? C.green : C.primary, borderRadius: 14, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div>
+            <div style={{ color: '#fff', fontSize: 13, fontWeight: 700 }}>
+              {d.type === 'addition' ? '💳 Demande d\'addition' : `🔔 Table ${d.tableNumero} demande l'addition — ${d.modeIcon} ${d.mode}`}
+            </div>
+            {d.type === 'addition' && (
+              <div style={{ color: 'rgba(255,255,255,.85)', fontSize: 11, marginTop: 2 }}>
+                Table {d.tableNumero} • {d.tableZone} — Le client veut payer
+              </div>
+            )}
+          </div>
+          <button onClick={async () => {
+            if (d.type === 'addition') {
+              await supabase.from('appels_serveur').update({ traite: true }).eq('id', d.id)
+            }
+            setDemandesPaiement(prev => prev.filter(x => x.id !== d.id))
+          }}
             style={{ background: 'rgba(255,255,255,.25)', border: 'none', borderRadius: 7, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
         </div>
       ))}
