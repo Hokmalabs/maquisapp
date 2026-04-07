@@ -90,7 +90,7 @@ export default function MenuPage({ params }) {
     setCommandes(cmdList);
 
     if (cmdList.length > 0) {
-      await supabase.from('tables').update({ statut: 'occupee' }).eq('id', id);
+      await marquerTableOccupee(id);
     }
 
     if (cmdList.length) {
@@ -140,8 +140,11 @@ export default function MenuPage({ params }) {
             .from('commandes').select('id').eq('table_id', tableId)
             .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
           if (!remaining?.length) {
-            recuEnCours.current = true;
-            await afficherRecu();
+            setTimeout(async () => {
+              if (!recuEnCours.current) {
+                await afficherRecu();
+              }
+            }, 800);
           } else {
             setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
             setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
@@ -156,29 +159,42 @@ export default function MenuPage({ params }) {
   }, [restaurant, tableId]);
 
   async function afficherRecu() {
-    const { data: cmdsCloturees } = await supabase
-      .from('commandes').select('*').eq('table_id', tableId)
-      .eq('statut', 'cloture').order('created_at', { ascending: true });
+    if (recuEnCours.current) return;
+    recuEnCours.current = true;
 
-    if (!cmdsCloturees?.length) return;
+    try {
+      const { data: cmdsCloturees } = await supabase
+        .from('commandes').select('*').eq('table_id', tableId)
+        .eq('statut', 'cloture').order('created_at', { ascending: true });
 
-    const cmdIds = cmdsCloturees.map(c => c.id);
-    const { data: tousLesItems } = await supabase
-      .from('commande_items').select('*').in('commande_id', cmdIds);
+      if (!cmdsCloturees?.length) return;
 
-    const totalGeneral = cmdsCloturees.reduce((s, c) => s + (c.total || 0), 0);
-    const modePaie = cmdsCloturees[cmdsCloturees.length - 1]?.mode_paiement || '';
-    const { data: tblFresh } = await supabase.from('tables').select('*').eq('id', tableId).single();
+      const cmdIds = cmdsCloturees.map(c => c.id);
 
-    setRecuData({
-      restaurant, table: tblFresh, commandes: cmdsCloturees,
-      items: tousLesItems || [], total: totalGeneral,
-      modePaiement: modePaie, date: new Date(),
-    });
-    setCommandes([]);
-    setAllItems({});
-    setTableCloturee(true);
-    setShowRecu(true);
+      // UNE SEULE requête pour tous les items — pas de boucle
+      const { data: tousLesItems } = await supabase
+        .from('commande_items').select('*').in('commande_id', cmdIds);
+
+      const items = tousLesItems || [];
+      // Total calculé depuis les items (source de vérité)
+      const totalGeneral = items.reduce((s, item) => s + (item.prix_unitaire * item.quantite), 0);
+
+      const modePaie = cmdsCloturees[cmdsCloturees.length - 1]?.mode_paiement || '';
+      const { data: tblFresh } = await supabase.from('tables').select('*').eq('id', tableId).single();
+
+      setRecuData({
+        restaurant, table: tblFresh, commandes: cmdsCloturees,
+        items, total: totalGeneral,
+        modePaiement: modePaie, date: new Date(),
+      });
+      setCommandes([]);
+      setAllItems({});
+      setTableCloturee(true);
+      setShowRecu(true);
+    } catch (err) {
+      console.error('afficherRecu error:', err);
+      recuEnCours.current = false;
+    }
   }
 
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0);
@@ -205,6 +221,16 @@ export default function MenuPage({ params }) {
     return panier.find(i => i.plat_id === platId)?.quantite || 0;
   }
 
+  async function marquerTableOccupee(tid) {
+    const { error } = await supabase
+      .from('tables')
+      .update({ statut: 'occupee' })
+      .eq('id', tid);
+    if (error) {
+      console.error('Erreur update table statut:', error.message, error.code);
+    }
+  }
+
   async function envoyerCommande() {
     if (sendingRef.current || !panier.length || !restaurant || !table) return;
     sendingRef.current = true;
@@ -218,7 +244,7 @@ export default function MenuPage({ params }) {
       await supabase.from('commande_items').insert(
         panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, quantite: i.quantite, note: i.note || '' }))
       );
-      await supabase.from('tables').update({ statut: 'occupee' }).eq('id', table.id);
+      await marquerTableOccupee(table.id);
       setPanier([]);
       setShowPanierModal(false);
       setCommandes(prev => {
@@ -632,17 +658,18 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
   const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement);
 
-  const itemsGroupes = items.reduce((acc, item) => {
-    const key = item.nom_plat + '_' + item.prix_unitaire;
-    if (acc[key]) {
-      acc[key].quantite += item.quantite;
-      acc[key].total += item.prix_unitaire * item.quantite;
+  const itemsGroupes = {};
+  for (const item of items) {
+    const key = `${item.nom_plat}__${item.prix_unitaire}`;
+    if (itemsGroupes[key]) {
+      itemsGroupes[key].quantite += item.quantite;
+      itemsGroupes[key].total += item.prix_unitaire * item.quantite;
     } else {
-      acc[key] = { nom: item.nom_plat, quantite: item.quantite, prix: item.prix_unitaire, total: item.prix_unitaire * item.quantite };
+      itemsGroupes[key] = { nom: item.nom_plat, quantite: item.quantite, prix: item.prix_unitaire, total: item.prix_unitaire * item.quantite };
     }
-    return acc;
-  }, {});
+  }
   const lignes = Object.values(itemsGroupes);
+  const totalVerifie = lignes.reduce((s, l) => s + l.total, 0);
 
   return (
     <div style={{ minHeight: '100vh', background: '#F5F5F5', fontFamily: "'DM Sans', system-ui", padding: '20px 16px 40px' }}>
@@ -682,7 +709,7 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
         <div style={{ borderTop: '2px solid #1A1A2E', paddingTop: 12, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: '#1A1A2E' }}>TOTAL</span>
-            <span style={{ fontSize: 20, fontWeight: 800, color: '#FF6B35' }}>{total.toLocaleString()} FCFA</span>
+            <span style={{ fontSize: 20, fontWeight: 800, color: '#FF6B35' }}>{totalVerifie.toLocaleString()} FCFA</span>
           </div>
           {modePaie && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, background: '#F5F5F5', borderRadius: 8, padding: '6px 10px' }}>

@@ -20,6 +20,7 @@ export default function ParametresPage() {
   const [profileForm, setProfileForm] = useState({ nom: '', prenom: '' })
   const [activeSection, setActiveSection] = useState('restaurant')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
@@ -166,6 +167,38 @@ export default function ParametresPage() {
                 {`${process.env.NEXT_PUBLIC_APP_URL || 'https://maquisapp-xi.vercel.app'}/menu/${form.slug}/[table-id]`}
               </div>
             </div>
+
+            {/* Section Écran Cuisine */}
+            {(() => {
+              const cuisineUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://maquisapp-xi.vercel.app'}/cuisine/${restaurant?.id}`;
+              return (
+                <div style={{ background: C.dark, borderRadius: 16, padding: '18px', marginBottom: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 12, background: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👨‍🍳</div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Écran Cuisine</div>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)' }}>Affichez les commandes en cuisine</div>
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,.08)', borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 11, color: 'rgba(255,255,255,.7)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                    {cuisineUrl}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => { navigator.clipboard.writeText(cuisineUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                      style={{ flex: 1, background: C.primary, border: 'none', borderRadius: 10, padding: '10px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {copied ? '✅ Copié !' : '📋 Copier le lien'}
+                    </button>
+                    <button onClick={() => window.open(cuisineUrl, '_blank')}
+                      style={{ flex: 1, background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, padding: '10px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      🔗 Ouvrir
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 10, fontSize: 11, color: 'rgba(255,255,255,.4)', textAlign: 'center' }}>
+                    Ouvrez ce lien sur la tablette ou l'écran de votre cuisine
+                  </div>
+                </div>
+              );
+            })()}
 
             <button className="btn" onClick={saveRestaurant} disabled={saving}
               style={{ width: '100%', background: C.primary, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? .7 : 1 }}>
