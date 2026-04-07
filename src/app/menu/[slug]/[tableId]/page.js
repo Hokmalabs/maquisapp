@@ -10,6 +10,15 @@ const C = {
   shadow: 'rgba(0,0,0,0.08)', shadowMd: 'rgba(0,0,0,0.14)',
 };
 
+// ─── MANQUANT dans l'ancien fichier — causait une erreur dans RecuNumerique ──
+const MODES_PAIEMENT = [
+  { id: 'wave',         label: 'Wave',          icon: '🌊' },
+  { id: 'orange_money', label: 'Orange Money',  icon: '🟠' },
+  { id: 'mtn_money',   label: 'MTN Money',     icon: '💛' },
+  { id: 'cash',        label: 'Espèces',       icon: '💵' },
+  { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
+];
+
 const STATUT_CONFIG = {
   en_attente:     { label: 'En attente',     color: '#FFB800', icon: '⏳', bg: '#FFF8E1' },
   valide:         { label: 'Validée',        color: '#00C851', icon: '✅', bg: '#E8F5E9' },
@@ -33,18 +42,17 @@ export default function MenuPage({ params }) {
   const [loading, setLoading]         = useState(true);
   const [activeCat, setActiveCat]     = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showPanierModal, setShowPanierModal]     = useState(false);
-  const [showDetailCmd, setShowDetailCmd]         = useState(null);
+  const [showPanierModal, setShowPanierModal] = useState(false);
+  const [showDetailCmd, setShowDetailCmd]     = useState(null);
   const [showRecu, setShowRecu]       = useState(false);
   const [recuData, setRecuData]       = useState(null);
   const [appelEnvoye, setAppelEnvoye] = useState(false);
   const [demandeEnvoyee, setDemandeEnvoyee] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [sending, setSending]         = useState(false);
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
-  const catRefs = useRef({});
+  const catRefs    = useRef({});
   const sendingRef = useRef(false);
-  // ─── FIX BUG 4 : ref pour éviter les appels multiples à afficherRecu ──────
   const recuEnCours = useRef(false);
 
   useEffect(() => { loadData(); }, [slug, tableId]);
@@ -81,12 +89,10 @@ export default function MenuPage({ params }) {
     const cmdList = cmds || [];
     setCommandes(cmdList);
 
-    // Marquer la table comme occupée s'il y a des commandes actives
     if (cmdList.length > 0) {
       await supabase.from('tables').update({ statut: 'occupee' }).eq('id', id);
     }
 
-    // ─── FIX BUG 4 : charger les items UNE SEULE FOIS avec Promise.all ──────
     if (cmdList.length) {
       const itemsMap = {};
       await Promise.all(cmdList.map(async (cmd) => {
@@ -99,7 +105,6 @@ export default function MenuPage({ params }) {
     }
   }
 
-  // ─── REALTIME ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!restaurant) return;
     const ch = supabase.channel(`menu-${tableId}`)
@@ -109,59 +114,41 @@ export default function MenuPage({ params }) {
       }, async (payload) => {
         const s = payload.new?.statut;
 
-        // ─── FIX BUG 3 : NE PAS recharger tous les items sur chaque event ──
-        // On recharge seulement les commandes (pas les items)
-        // Les items sont rechargés uniquement si le statut change (pas DELETE)
         if (['en_attente','valide','en_preparation','presque_pret','servi'].includes(s)) {
-          // Mettre à jour seulement la commande concernée dans le state
           setCommandes(prev => {
             const exists = prev.find(c => c.id === payload.new.id);
             if (exists) {
               return prev.map(c => c.id === payload.new.id ? { ...payload.new } : c);
             }
-            // Ne pas ajouter si on vient d'envoyer (évite le doublon)
             if (!sendingRef.current) {
               return [...prev, payload.new];
             }
             return prev;
           });
-          // Charger les items de cette commande seulement si elle est nouvelle
           setAllItems(prev => {
             if (!prev[payload.new.id]) {
-              // Nouvelle commande → charger ses items
               supabase.from('commande_items').select('*').eq('commande_id', payload.new.id)
                 .then(({ data }) => {
                   setAllItems(p => ({ ...p, [payload.new.id]: data || [] }));
                 });
             }
-            // Si commande existante, NE PAS écraser les items (fix bug 3)
             return prev;
           });
         } else if (s === 'cloture') {
           if (recuEnCours.current) return;
           const { data: remaining } = await supabase
-            .from('commandes')
-            .select('id')
-            .eq('table_id', tableId)
+            .from('commandes').select('id').eq('table_id', tableId)
             .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
           if (!remaining?.length) {
             recuEnCours.current = true;
             await afficherRecu();
           } else {
             setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
-            setAllItems(prev => {
-              const next = { ...prev };
-              delete next[payload.new.id];
-              return next;
-            });
+            setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
           }
         } else if (s === 'annule') {
           setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
-          setAllItems(prev => {
-            const next = { ...prev };
-            delete next[payload.new.id];
-            return next;
-          });
+          setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
         }
       })
       .subscribe();
@@ -170,39 +157,23 @@ export default function MenuPage({ params }) {
 
   async function afficherRecu() {
     const { data: cmdsCloturees } = await supabase
-      .from('commandes')
-      .select('*')
-      .eq('table_id', tableId)
-      .eq('statut', 'cloture')
-      .order('created_at', { ascending: true });
+      .from('commandes').select('*').eq('table_id', tableId)
+      .eq('statut', 'cloture').order('created_at', { ascending: true });
 
     if (!cmdsCloturees?.length) return;
 
-    // ─── FIX BUG 4 : charger chaque commande UNE SEULE FOIS ─────────────────
-    const allItemsRecu = [];
     const cmdIds = cmdsCloturees.map(c => c.id);
-    // Requête unique pour tous les items
     const { data: tousLesItems } = await supabase
-      .from('commande_items')
-      .select('*')
-      .in('commande_id', cmdIds);
-
-    if (tousLesItems) allItemsRecu.push(...tousLesItems);
+      .from('commande_items').select('*').in('commande_id', cmdIds);
 
     const totalGeneral = cmdsCloturees.reduce((s, c) => s + (c.total || 0), 0);
     const modePaie = cmdsCloturees[cmdsCloturees.length - 1]?.mode_paiement || '';
-
-    // Récupérer les infos table fraîches
     const { data: tblFresh } = await supabase.from('tables').select('*').eq('id', tableId).single();
 
     setRecuData({
-      restaurant,
-      table: tblFresh,
-      commandes: cmdsCloturees,
-      items: allItemsRecu,
-      total: totalGeneral,
-      modePaiement: modePaie,
-      date: new Date(),
+      restaurant, table: tblFresh, commandes: cmdsCloturees,
+      items: tousLesItems || [], total: totalGeneral,
+      modePaiement: modePaie, date: new Date(),
     });
     setCommandes([]);
     setAllItems({});
@@ -210,7 +181,6 @@ export default function MenuPage({ params }) {
     setShowRecu(true);
   }
 
-  // ─── PANIER ───────────────────────────────────────────────────────────────
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0);
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0);
 
@@ -277,7 +247,9 @@ export default function MenuPage({ params }) {
 
   async function appelServeur() {
     if (!restaurant || !table || appelEnvoye) return;
-    await supabase.from('appels_serveur').insert({ restaurant_id: restaurant.id, table_id: table.id, traite: false });
+    await supabase.from('appels_serveur').insert({
+      restaurant_id: restaurant.id, table_id: table.id, traite: false
+    });
     setAppelEnvoye(true);
     setTimeout(() => setAppelEnvoye(false), 30000);
   }
@@ -302,7 +274,7 @@ export default function MenuPage({ params }) {
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
         <div style={{ fontSize: 64, marginBottom: 20 }}>🙏</div>
         <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 10 }}>Merci de votre visite !</div>
-        <div style={{ fontSize: 14, color: C.gray, lineHeight: 1.6, marginBottom: 28 }}>Votre table a été libérée. Nous espérons vous revoir bientôt chez {restaurant.nom} !</div>
+        <div style={{ fontSize: 14, color: C.gray, lineHeight: 1.6, marginBottom: 28 }}>Nous espérons vous revoir bientôt chez {restaurant.nom} !</div>
         <button onClick={() => setShowRecu(true)} style={{ background: C.primary, border: 'none', borderRadius: 14, padding: '13px 28px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
           📄 Voir mon reçu
         </button>
@@ -360,13 +332,10 @@ export default function MenuPage({ params }) {
             {commandes.map((cmd, idx) => (
               <div key={cmd.id} style={{ marginBottom: 8, animation: 'slideUp .4s ease' }}>
                 <CommandeStatusBanner
-                  cmd={cmd}
-                  items={allItems[cmd.id] || []}
-                  index={idx + 1}
-                  total={commandes.length}
+                  cmd={cmd} items={allItems[cmd.id] || []}
+                  index={idx + 1} total={commandes.length}
                   onVoirDetails={() => setShowDetailCmd(cmd)}
-                  onPayer={demanderAddition}
-                />
+                  onPayer={demanderAddition} />
               </div>
             ))}
             {commandes.length > 1 && (
@@ -658,13 +627,11 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
   );
 }
 
-
 function RecuNumerique({ data, onClose, tableCloturee }) {
   const { restaurant, table, items, total, modePaiement, date, commandes } = data;
   const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement);
 
-  // ─── FIX BUG 4 : grouper correctement sans multiplier ────────────────────
   const itemsGroupes = items.reduce((acc, item) => {
     const key = item.nom_plat + '_' + item.prix_unitaire;
     if (acc[key]) {

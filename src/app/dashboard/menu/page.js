@@ -304,7 +304,7 @@ export default function MenuPage() {
                     : <><div style={{ fontSize: 30 }}>📷</div><div style={{ fontSize: 12, color: C.gray, marginTop: 6 }}>Appuyez pour ajouter une photo</div></>
                   }
                 </div>
-                <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={uploadImage} style={{ display: 'none' }} />
+                <input ref={fileRef} type="file" accept="image/*"onChange={uploadImage} style={{ display: 'none' }} />
               </div>
               {/* Catégorie */}
               <select value={platForm.categorie_id} onChange={e => setPlatForm(p => ({ ...p, categorie_id: e.target.value }))}
