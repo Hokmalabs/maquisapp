@@ -231,6 +231,14 @@ export default function MenuPage({ params }) {
     }
   }
 
+  async function calculerVraiTotal(cmdId) {
+    const { data: items } = await supabase
+      .from('commande_items')
+      .select('quantite, plats(prix)')
+      .eq('commande_id', cmdId);
+    return items?.reduce((s, i) => s + (i.plats.prix * i.quantite), 0) || 0;
+  }
+
   async function envoyerCommande() {
     if (sendingRef.current || !panier.length || !restaurant || !table) return;
     sendingRef.current = true;
@@ -238,18 +246,20 @@ export default function MenuPage({ params }) {
     try {
       const { data: cmd, error } = await supabase
         .from('commandes')
-        .insert({ restaurant_id: restaurant.id, table_id: table.id, statut: 'en_attente', total: totalPanier, paye: false })
+        .insert({ restaurant_id: restaurant.id, table_id: table.id, statut: 'en_attente', total: 0, paye: false })
         .select().single();
       if (error || !cmd) return;
       await supabase.from('commande_items').insert(
         panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, quantite: i.quantite, note: i.note || '' }))
       );
+      const vraiTotal = await calculerVraiTotal(cmd.id);
+      await supabase.from('commandes').update({ total: vraiTotal }).eq('id', cmd.id);
       await marquerTableOccupee(table.id);
       setPanier([]);
       setShowPanierModal(false);
       setCommandes(prev => {
         if (prev.find(c => c.id === cmd.id)) return prev;
-        return [...prev, cmd];
+        return [...prev, { ...cmd, total: vraiTotal }];
       });
       const { data: newItems } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
       setAllItems(prev => ({ ...prev, [cmd.id]: newItems || [] }));
