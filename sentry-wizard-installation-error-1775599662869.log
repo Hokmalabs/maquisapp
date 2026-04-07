@@ -1,0 +1,30 @@
+npm warn cleanup Failed to remove some directories [
+npm warn cleanup   [
+npm warn cleanup     '\\\\?\\D:\\JPC\\HOKMA\\MAQUISAPP\\maquisapp\\node_modules\\@sentry\\node',
+npm warn cleanup     [Error: EPERM: operation not permitted, rmdir 'D:\JPC\HOKMA\MAQUISAPP\maquisapp\node_modules\@sentry\node\build'] {
+npm warn cleanup       errno: -4048,
+npm warn cleanup       code: 'EPERM',
+npm warn cleanup       syscall: 'rmdir',
+npm warn cleanup       path: 'D:\\JPC\\HOKMA\\MAQUISAPP\\maquisapp\\node_modules\\@sentry\\node\\build'
+npm warn cleanup     }
+npm warn cleanup   ],
+npm warn cleanup   [
+npm warn cleanup     '\\\\?\\D:\\JPC\\HOKMA\\MAQUISAPP\\maquisapp\\node_modules\\@sentry\\browser',
+npm warn cleanup     [Error: EPERM: operation not permitted, rmdir 'D:\JPC\HOKMA\MAQUISAPP\maquisapp\node_modules\@sentry\browser\build'] {
+npm warn cleanup       errno: -4048,
+npm warn cleanup       code: 'EPERM',
+npm warn cleanup       syscall: 'rmdir',
+npm warn cleanup       path: 'D:\\JPC\\HOKMA\\MAQUISAPP\\maquisapp\\node_modules\\@sentry\\browser\\build'
+npm warn cleanup     }
+npm warn cleanup   ]
+npm warn cleanup ]
+npm error code ECONNRESET
+npm error syscall read
+npm error errno -4077
+npm error network read ECONNRESET
+npm error network This is a problem related to network connectivity.
+npm error network In most cases you are behind a proxy or have bad network settings.
+npm error network
+npm error network If you are behind a proxy, please make sure that the
+npm error network 'proxy' config is set properly.  See: 'npm help config'
+npm error A complete log of this run can be found in: C:\Users\KIRA TECHNOLOGIE\AppData\Local\npm-cache\_logs\2026-04-07T22_01_52_162Z-debug-0.log
