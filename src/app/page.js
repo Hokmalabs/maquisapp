@@ -47,7 +47,6 @@ export default function LandingPage() {
           <a className="nav-link hide-mobile" href="#fonctionnalites">Fonctionnalités</a>
           <a className="nav-link hide-mobile" href="#comment">Comment ça marche</a>
           <button className="btn-outline" onClick={() => router.push('/auth/login')} style={{ padding: '9px 20px', fontSize: 13 }}>Connexion</button>
-          <button className="btn-primary" onClick={() => router.push('/auth/register')} style={{ padding: '10px 22px', fontSize: 13 }}>Démarrer →</button>
         </div>
       </nav>
 

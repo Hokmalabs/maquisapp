@@ -266,13 +266,16 @@ export default function CommandesPage() {
   }
 
   // ─── FIX BUG 5 : capturer les données du ticket AVANT de fermer le modal ──
-  function preparerEtOuvrirTicket(group, itemsSnapshot) {
+  function preparerEtOuvrirTicket(group, itemsSnapshot, totalForce) {
     const allItems = []
     for (const cmd of group.cmds) {
       const items = itemsSnapshot[cmd.id] || []
       allItems.push(...items)
     }
-    const total = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
+    // totalForce est passé quand cmd.total est déjà 0 après clôture
+    const total = totalForce != null
+      ? totalForce
+      : allItems.reduce((s, it) => s + (it.prix_unitaire || 0) * (it.quantite || 1), 0)
     const modePaiement = group.cmds[group.cmds.length - 1]?.mode_paiement || ''
     setTicketData({ group, allItems, total, modePaiement, restaurant, date: new Date() })
     setShowTicket(true)
@@ -552,15 +555,21 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
   // ─── FIX BUG 5 : passer groupItems au ticket AVANT de fermer ─────────────
   async function handleCloturerEtTicket() {
     if (!modePaiement || updating) return
-    // Capturer les items actuels avant clôture
-    const itemsSnapshot = { ...groupItems }
+    // Deep-copy des items avant clôture (cmd.total sera 0 après)
+    const itemsSnapshot = {}
+    for (const [cmdId, items] of Object.entries(groupItems)) {
+      itemsSnapshot[cmdId] = items.map(it => ({ ...it }))
+    }
+    // Calculer le total depuis les items (source de vérité)
+    const allItemsNow = Object.values(itemsSnapshot).flat()
+    const totalCalcule = allItemsNow.reduce((s, it) => s + (it.prix_unitaire || 0) * (it.quantite || 1), 0)
     const groupSnapshot = { ...group, cmds: [...group.cmds] }
     // Clôturer
     await onCloturerTout(group, modePaiement)
     // Fermer le modal
     onClose()
-    // Ouvrir le ticket avec les données capturées
-    onTicket(groupSnapshot, itemsSnapshot)
+    // Ouvrir le ticket avec total calculé avant clôture
+    onTicket(groupSnapshot, itemsSnapshot, totalCalcule)
   }
 
   return (
@@ -686,11 +695,12 @@ function TicketCaisse({ data, onClose }) {
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement)
 
   const lignes = allItems.reduce((acc, item) => {
-    const key = item.nom_plat + '_' + item.prix_unitaire
-    if (acc[key]) { acc[key].quantite += item.quantite; acc[key].total += item.prix_unitaire * item.quantite }
-    else acc[key] = { nom: item.nom_plat, quantite: item.quantite, prix: item.prix_unitaire, total: item.prix_unitaire * item.quantite }
+    const key = item.nom_plat + '__' + item.prix_unitaire
+    if (acc[key]) { acc[key].quantite += (item.quantite || 1); acc[key].total += (item.prix_unitaire || 0) * (item.quantite || 1) }
+    else acc[key] = { nom: item.nom_plat, quantite: item.quantite || 1, prix: item.prix_unitaire || 0, total: (item.prix_unitaire || 0) * (item.quantite || 1) }
     return acc
   }, {})
+  const totalAffiche = Object.values(lignes).reduce((s, l) => s + l.total, 0)
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }}>
@@ -726,7 +736,7 @@ function TicketCaisse({ data, onClose }) {
             <div style={{ borderTop: '1px dashed #ccc', margin: '10px 0' }}></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 14 }}>
               <span>TOTAL</span>
-              <span>{total.toLocaleString()} FCFA</span>
+              <span>{totalAffiche.toLocaleString()} FCFA</span>
             </div>
             {modePaie && <div style={{ marginTop: 6, fontSize: 11 }}>Paiement : {modePaie.icon} {modePaie.label}</div>}
             <div style={{ borderTop: '1px dashed #ccc', margin: '10px 0' }}></div>

@@ -734,10 +734,26 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
           <div style={{ fontSize: 10, color: '#ccc', marginTop: 8 }}>Reçu généré par MaquisApp</div>
         </div>
       </div>
-      <div className="no-print" style={{ maxWidth: 400, margin: '16px auto 0' }}>
+      <div className="no-print" style={{ maxWidth: 400, margin: '16px auto 0', display: 'flex', gap: 10 }}>
         <button onClick={() => window.print()}
-          style={{ width: '100%', background: '#1A1A2E', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-          🖨️ Imprimer / Télécharger
+          style={{ flex: 1, background: '#1A1A2E', border: 'none', borderRadius: 14, padding: '13px 10px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+          🖨️ Imprimer
+        </button>
+        <button onClick={async () => {
+          try {
+            const { default: html2canvas } = await import('html2canvas')
+            const el = document.getElementById('recu-print')
+            const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#fff' })
+            const link = document.createElement('a')
+            link.download = `recu-table-${table?.numero || ''}.png`
+            link.href = canvas.toDataURL('image/png')
+            link.click()
+          } catch {
+            window.print()
+          }
+        }}
+          style={{ flex: 1, background: '#FF6B35', border: 'none', borderRadius: 14, padding: '13px 10px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+          ⬇️ Télécharger
         </button>
       </div>
       {tableCloturee && (
