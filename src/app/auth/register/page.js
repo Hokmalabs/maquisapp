@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [loadingGoogle, setLoadingGoogle] = useState(false)
   const [error, setError]                 = useState('')
   const [step, setStep]                   = useState(1) // 1 = resto, 2 = gérant+compte
+  const [acceptCGU, setAcceptCGU] = useState(false)
   const [form, setForm] = useState({
     nom_restaurant: '', ville: 'Abidjan', telephone: '',
     nom_gerant: '', prenom_gerant: '', email: '', password: '',
@@ -48,6 +49,10 @@ export default function RegisterPage() {
   const handleRegister = async (e) => {
     e.preventDefault()
     if (step === 1) { setStep(2); return; }
+    if (!acceptCGU) {
+      setError("Veuillez accepter les conditions d'utilisation")
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -183,6 +188,26 @@ export default function RegisterPage() {
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', marginBottom: 10, transition: 'border-color .2s' }} />
                 <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="Mot de passe (min. 6 caractères) *" required minLength={6}
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', transition: 'border-color .2s' }} />
+              </div>
+
+              {/* NOTE TECHNIQUE : Activer la confirmation email dans
+                  Supabase Dashboard → Authentication → Email Templates
+                  → Enable email confirmations
+                  Cela enverra un email de vérification à chaque inscription */}
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={acceptCGU}
+                  onChange={e => setAcceptCGU(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: '#FF6B35', width: 16, height: 16, flexShrink: 0 }}
+                />
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,.6)', lineHeight: 1.5 }}>
+                  J'accepte les{' '}
+                  <a href="/legal/conditions" target="_blank" style={{ color: '#FF6B35', textDecoration: 'none' }}>Conditions d'utilisation</a>
+                  {' '}et la{' '}
+                  <a href="/legal/confidentialite" target="_blank" style={{ color: '#FF6B35', textDecoration: 'none' }}>Politique de confidentialité</a>
+                </span>
               </div>
 
               {error && (

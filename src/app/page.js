@@ -211,6 +211,38 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── TÉMOIGNAGES ─────────────────────────────────────────────── */}
+      <section style={{ padding: '100px 24px', background: 'rgba(255,255,255,.02)', borderTop: '1px solid rgba(255,255,255,.05)', borderBottom: '1px solid rgba(255,255,255,.05)' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
+            <div className="tag" style={{ marginBottom: 16 }}>Témoignages</div>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, marginBottom: 12 }}>Ils nous font confiance</h2>
+            <p style={{ fontSize: 15, color: 'rgba(255,255,255,.5)' }}>Les premiers restaurants à avoir digitalisé avec MaquisApp</p>
+          </div>
+          <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
+            {[
+              { emoji: '👨🏿', nom: 'Kouamé A.', restaurant: 'Maquis Le Baobab, Cocody', texte: "Avant MaquisApp, mes serveurs couraient partout avec des carnets. Maintenant les commandes arrivent directement en cuisine. Mes clients adorent scanner le QR code !" },
+              { emoji: '👩🏿', nom: 'Aya K.', restaurant: 'Restaurant Chez Aya, Marcory', texte: "La gestion des commandes est devenue tellement simple. Je vois tout depuis mon téléphone même quand je suis pas sur place. C'est magique !" },
+              { emoji: '👨🏿‍🍳', nom: 'Ibrahim D.', restaurant: 'Maquis La Détente, Yopougon', texte: "En 14 jours d'essai gratuit j'ai vu la différence. Moins d'erreurs de commandes, clients plus satisfaits. J'ai souscrit sans hésiter." },
+            ].map(t => (
+              <div key={t.nom} style={{ flexShrink: 0, width: 300, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16, padding: '20px' }}>
+                <div style={{ display: 'flex', gap: 2, marginBottom: 14 }}>
+                  {[1,2,3,4,5].map(i => <span key={i} style={{ color: '#FFB800', fontSize: 14 }}>★</span>)}
+                </div>
+                <p style={{ fontSize: 14, color: 'rgba(255,255,255,.7)', lineHeight: 1.75, marginBottom: 20, fontStyle: 'italic' }}>"{t.texte}"</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#FF6B35,#FF8C42)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{t.emoji}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{t.nom}</div>
+                    <div style={{ fontSize: 11, color: '#FF6B35', marginTop: 1 }}>{t.restaurant}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── TARIFS ──────────────────────────────────────────────────── */}
       <section id="tarifs" style={{ padding: '100px 24px', maxWidth: 640, margin: '0 auto', textAlign: 'center' }}>
         <div style={{ marginBottom: 48 }}>
@@ -266,15 +298,16 @@ export default function LandingPage() {
           <span style={{ fontSize: 15, fontWeight: 700 }}>MaquisApp</span>
         </div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>© 2026 Hokma Labs • Fait avec ❤️ en Côte d'Ivoire</div>
-        <div style={{ display: 'flex', gap: 20 }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <a href="#" className="nav-link" style={{ fontSize: 12 }}>Contact</a>
-          <a href="#" className="nav-link" style={{ fontSize: 12 }}>Mentions légales</a>
+          <a href="/legal/conditions" className="nav-link" style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>Conditions d'utilisation</a>
+          <a href="/legal/confidentialite" className="nav-link" style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>Politique de confidentialité</a>
         </div>
       </footer>
 
       {/* ── BOUTON WHATSAPP FLOTTANT ─────────────────────────────────── */}
       <a
-        href={`https://wa.me/2250708091234?text=${encodeURIComponent("Bonjour, je souhaite en savoir plus sur MaquisApp 🍽️")}`}
+        href={`https://wa.me/2250585379999?text=${encodeURIComponent("Bonjour, je souhaite en savoir plus sur MaquisApp 🍽️")}`}
         target="_blank"
         rel="noopener noreferrer"
         title="Contactez-nous sur WhatsApp"
