@@ -35,6 +35,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [showCmdManuelle, setShowCmdManuelle] = useState(false)
   const [avertissementExpiration, setAvertissementExpiration] = useState(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [onboardingStep, setOnboardingStep] = useState(0)
 
   // Commande manuelle
   const [tables, setTables] = useState([])
@@ -119,6 +121,16 @@ export default function DashboardPage() {
     setCategories(cats || [])
     if (cats?.length) setActiveCat(cats[0].id)
     setPlats(pls || [])
+
+    // ── Vérification onboarding (nouveau restaurant) ───────────────────────
+    const [{ data: platsCheck }, { data: tablesCheck }] = await Promise.all([
+      supabase.from('plats').select('id').eq('restaurant_id', rid).limit(1),
+      supabase.from('tables').select('id').eq('restaurant_id', rid).limit(1),
+    ])
+    if (!platsCheck?.length && !tablesCheck?.length) {
+      setShowOnboarding(true)
+    }
+
     setLoading(false)
   }
 
@@ -544,6 +556,46 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ── MODAL ONBOARDING ─────────────────────────────────────────── */}
+      {showOnboarding && (() => {
+        const steps = [
+          { icon: '🍽️', title: 'Ajoutez votre menu', desc: 'Commencez par ajouter vos catégories et vos plats', btn: 'Créer mon menu →', action: () => router.push('/dashboard/menu') },
+          { icon: '🪑', title: 'Créez vos tables', desc: 'Ajoutez vos tables et générez les QR codes', btn: 'Créer mes tables →', action: () => router.push('/dashboard/tables') },
+          { icon: '📱', title: 'Imprimez vos QR codes', desc: 'Imprimez et placez les QR codes sur vos tables. Vos clients pourront commander directement !', btn: "C'est parti ! →", action: () => setShowOnboarding(false) },
+        ]
+        const step = steps[onboardingStep]
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'fadeIn .2s' }}>
+            <div onClick={() => setShowOnboarding(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.7)' }}></div>
+            <div style={{ position: 'relative', background: C.white, borderRadius: 20, padding: '28px 24px', width: '100%', maxWidth: 360, animation: 'slideUp .3s ease', textAlign: 'center' }}>
+              <button onClick={() => setShowOnboarding(false)}
+                style={{ position: 'absolute', top: 14, right: 14, background: C.grayLight, border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 13, color: C.gray, fontFamily: 'inherit' }}>
+                Ignorer
+              </button>
+              <div style={{ fontSize: 52, marginBottom: 16 }}>{step.icon}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 10 }}>{step.title}</div>
+              <div style={{ fontSize: 13, color: C.gray, lineHeight: 1.6, marginBottom: 24 }}>{step.desc}</div>
+              {/* Indicateur progression */}
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 7, marginBottom: 24 }}>
+                {steps.map((_, i) => (
+                  <div key={i} style={{ width: i === onboardingStep ? 20 : 8, height: 8, borderRadius: 4, background: i === onboardingStep ? C.primary : C.border, transition: 'all .3s' }}></div>
+                ))}
+              </div>
+              <button onClick={() => { if (onboardingStep < steps.length - 1) { step.action(); setOnboardingStep(prev => prev + 1) } else { step.action() } }}
+                style={{ width: '100%', background: C.primary, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {step.btn}
+              </button>
+              {onboardingStep > 0 && (
+                <button onClick={() => setOnboardingStep(prev => prev - 1)}
+                  style={{ marginTop: 10, background: 'none', border: 'none', color: C.gray, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ← Retour
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
