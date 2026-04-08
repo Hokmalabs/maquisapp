@@ -17,6 +17,10 @@ export default function LoginPage() {
   const [loadingGoogle, setLoadingGoogle] = useState(false)
   const [error, setError]       = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [showReset, setShowReset] = useState(false)
+  const [resetEmail, setResetEmail] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
 
   // ── Email / Password ────────────────────────────────────────────────────
   const handleLogin = async (e) => {
@@ -37,6 +41,17 @@ export default function LoginPage() {
       return
     }
     router.push('/dashboard')
+  }
+
+  // ── Reset Password ───────────────────────────────────────────────────────
+  const resetPassword = async () => {
+    if (!resetEmail) return
+    setResetLoading(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      redirectTo: 'https://www.maquisapp.com/auth/reset-password'
+    })
+    if (!error) setResetSent(true)
+    setResetLoading(false)
   }
 
   // ── Google OAuth ─────────────────────────────────────────────────────────
@@ -117,7 +132,7 @@ export default function LoginPage() {
               style={{ width: '100%', padding: '13px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.12)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 14, fontFamily: 'inherit', transition: 'border-color .2s' }} />
           </div>
 
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 8 }}>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.5)', display: 'block', marginBottom: 6 }}>Mot de passe</label>
             <div style={{ position: 'relative' }}>
               <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required
@@ -128,6 +143,35 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+
+          <div style={{ textAlign: 'right', marginBottom: 20 }}>
+            <button type="button" onClick={() => { setShowReset(!showReset); setResetSent(false); setResetEmail('') }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,.4)', fontSize: 12, fontFamily: 'inherit' }}>
+              Mot de passe oublié ?
+            </button>
+          </div>
+
+          {showReset && (
+            <div style={{ background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 14, padding: '16px', marginBottom: 16 }}>
+              {resetSent ? (
+                <div style={{ fontSize: 13, color: C.primary, fontWeight: 600, textAlign: 'center' }}>
+                  ✅ Lien envoyé ! Vérifiez votre email.
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 10 }}>
+                    Entrez votre email pour recevoir un lien de réinitialisation.
+                  </div>
+                  <input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} placeholder="votre@email.com"
+                    style={{ width: '100%', padding: '11px 13px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,.12)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', marginBottom: 10, outline: 'none' }} />
+                  <button type="button" onClick={resetPassword} disabled={resetLoading || !resetEmail}
+                    style={{ width: '100%', background: resetLoading ? 'rgba(255,107,53,.5)' : C.primary, border: 'none', borderRadius: 10, padding: '11px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: resetLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    {resetLoading ? 'Envoi...' : 'Envoyer le lien de réinitialisation'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           {error && (
             <div style={{ background: 'rgba(255,59,48,.15)', border: '1px solid rgba(255,59,48,.3)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#FF6B6B', marginBottom: 14 }}>
