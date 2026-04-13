@@ -280,7 +280,7 @@ export default function LandingPage() {
         <div style={{ position: 'relative', zIndex: 1, maxWidth: 640, margin: '0 auto' }}>
           <div style={{ fontSize: 56, marginBottom: 20, animation: 'float 4s ease-in-out infinite' }}>🍽️</div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(32px, 5vw, 56px)', fontWeight: 900, lineHeight: 1.2, marginBottom: 20 }}>
-            Prêt à digitaliser<br /><span style={{ fontStyle: 'italic', color: '#FF6B35' }}>Votre restaurant 🚀 ?</span>
+            Prêt à digitaliser<br /><span style={{ fontStyle: 'italic', color: '#FF6B35' }}>votre restaurant ?</span>
           </h2>
           <p style={{ fontSize: 16, color: 'rgba(255,255,255,.5)', marginBottom: 40, lineHeight: 1.7 }}>
             Rejoignez les restaurateurs ivoiriens qui modernisent leur service avec MaquisApp. Gratuit pour commencer, sans engagement.
