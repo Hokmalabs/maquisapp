@@ -54,6 +54,7 @@ export default function MenuPage({ params }) {
   const catRefs    = useRef({});
   const sendingRef = useRef(false);
   const recuEnCours = useRef(false);
+  const recuAffiche = useRef(false);
 
   useEffect(() => { loadData(); }, [slug, tableId]);
 
@@ -135,16 +136,15 @@ export default function MenuPage({ params }) {
             return prev;
           });
         } else if (s === 'cloture') {
-          if (recuEnCours.current) return;
+          if (recuEnCours.current || recuAffiche.current) return;
           const { data: remaining } = await supabase
             .from('commandes').select('id').eq('table_id', tableId)
             .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
           if (!remaining?.length) {
             setTimeout(async () => {
-              if (!recuEnCours.current) {
-                await afficherRecu();
-              }
-            }, 800);
+              if (recuAffiche.current) return;
+              await afficherRecu();
+            }, 1000);
           } else {
             setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
             setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
@@ -159,7 +159,7 @@ export default function MenuPage({ params }) {
   }, [restaurant, tableId]);
 
   async function afficherRecu() {
-    if (recuEnCours.current) return;
+    if (recuEnCours.current || recuAffiche.current) return;
     recuEnCours.current = true;
 
     try {
@@ -171,28 +171,47 @@ export default function MenuPage({ params }) {
 
       const cmdIds = cmdsCloturees.map(c => c.id);
 
-      // UNE SEULE requête pour tous les items — pas de boucle
+      // UNE SEULE requête pour tous les items
       const { data: tousLesItems } = await supabase
-        .from('commande_items').select('*').in('commande_id', cmdIds);
+        .from('commande_items').select('nom_plat, prix_unitaire, quantite')
+        .in('commande_id', cmdIds);
 
-      const items = tousLesItems || [];
-      // Total calculé depuis les items (source de vérité)
-      const totalGeneral = items.reduce((s, item) => s + (item.prix_unitaire * item.quantite), 0);
+      // Agrégation côté JS — une seule fois, avant setRecuData
+      const itemsAgreges = {};
+      for (const item of (tousLesItems || [])) {
+        const key = item.nom_plat + '__' + item.prix_unitaire;
+        if (itemsAgreges[key]) {
+          itemsAgreges[key].quantite += item.quantite;
+          itemsAgreges[key].total += item.prix_unitaire * item.quantite;
+        } else {
+          itemsAgreges[key] = {
+            nom: item.nom_plat,
+            quantite: item.quantite,
+            prix: item.prix_unitaire,
+            total: item.prix_unitaire * item.quantite,
+          };
+        }
+      }
+      const lignesFinales = Object.values(itemsAgreges);
+      const totalFinal = lignesFinales.reduce((s, l) => s + l.total, 0);
 
       const modePaie = cmdsCloturees[cmdsCloturees.length - 1]?.mode_paiement || '';
       const { data: tblFresh } = await supabase.from('tables').select('*').eq('id', tableId).single();
 
       setRecuData({
         restaurant, table: tblFresh, commandes: cmdsCloturees,
-        items, total: totalGeneral,
+        items: lignesFinales,  // déjà agrégés
+        total: totalFinal,     // calculé depuis les lignes
         modePaiement: modePaie, date: new Date(),
       });
       setCommandes([]);
       setAllItems({});
       setTableCloturee(true);
       setShowRecu(true);
+      recuAffiche.current = true;  // verrou définitif
     } catch (err) {
       console.error('afficherRecu error:', err);
+    } finally {
       recuEnCours.current = false;
     }
   }
@@ -668,18 +687,9 @@ function RecuNumerique({ data, onClose, tableCloturee }) {
   const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement);
 
-  const itemsGroupes = {};
-  for (const item of items) {
-    const key = `${item.nom_plat}__${item.prix_unitaire}`;
-    if (itemsGroupes[key]) {
-      itemsGroupes[key].quantite += item.quantite;
-      itemsGroupes[key].total += item.prix_unitaire * item.quantite;
-    } else {
-      itemsGroupes[key] = { nom: item.nom_plat, quantite: item.quantite, prix: item.prix_unitaire, total: item.prix_unitaire * item.quantite };
-    }
-  }
-  const lignes = Object.values(itemsGroupes);
-  const totalVerifie = lignes.reduce((s, l) => s + l.total, 0);
+  // items est déjà agrégé par afficherRecu() — on affiche directement
+  const lignes = items;
+  const totalVerifie = total;
 
   return (
     <div style={{ minHeight: '100vh', background: '#F5F5F5', fontFamily: "'DM Sans', system-ui", padding: '20px 16px 40px' }}>
