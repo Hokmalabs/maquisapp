@@ -60,21 +60,39 @@ function CallbackHandler() {
 
     setStatus('Vérification du profil...')
 
-    // Vérifier si profil existe
+    // 1. Vérifier si profil existe avec restaurant associé
     const { data: profile } = await supabase
       .from('profiles')
       .select('restaurant_id')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     if (profile?.restaurant_id) {
-      // Profil existant → dashboard
       setStatus('Bienvenue ! Redirection...')
       router.push('/dashboard')
       return
     }
 
-    // Nouveau user Google → créer restaurant + profil
+    // 2. Vérifier si un restaurant existe déjà pour cet email
+    const { data: restoExistant } = await supabase
+      .from('restaurants')
+      .select('id')
+      .eq('email', user.email)
+      .maybeSingle()
+
+    if (restoExistant) {
+      // Restaurant trouvé — créer le profil manquant et rediriger
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        restaurant_id: restoExistant.id,
+        role: 'gerant',
+      })
+      setStatus('Bienvenue ! Redirection...')
+      router.push('/dashboard')
+      return
+    }
+
+    // 3. Nouveau compte Google → créer restaurant + profil
     setStatus('Création de votre espace...')
 
     const prenom = user.user_metadata?.full_name?.split(' ')[0] || ''
@@ -100,7 +118,7 @@ function CallbackHandler() {
     if (restoError) {
       // Restaurant existe peut-être déjà (double appel) → chercher le profil à nouveau
       const { data: profileRetry } = await supabase
-        .from('profiles').select('restaurant_id').eq('id', user.id).single()
+        .from('profiles').select('restaurant_id').eq('id', user.id).maybeSingle()
       if (profileRetry?.restaurant_id) {
         router.push('/dashboard')
         return
