@@ -58,6 +58,12 @@ export default function MenuPage({ params }) {
 
   useEffect(() => { loadData(); }, [slug, tableId]);
 
+  useEffect(() => {
+    if (sessionStorage.getItem(`table_cloturee_${tableId}`) === 'true') {
+      setTableCloturee(true);
+    }
+  }, [tableId]);
+
   async function loadData() {
     setLoading(true);
     const { data: resto } = await supabase.from('restaurants').select('*').eq('slug', slug).single();
@@ -137,14 +143,17 @@ export default function MenuPage({ params }) {
           });
         } else if (s === 'cloture') {
           if (recuEnCours.current || recuAffiche.current) return;
+
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          if (recuAffiche.current) return;
+
           const { data: remaining } = await supabase
             .from('commandes').select('id').eq('table_id', tableId)
             .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
+
           if (!remaining?.length) {
-            setTimeout(async () => {
-              if (recuAffiche.current) return;
-              await afficherRecu();
-            }, 1000);
+            await afficherRecu();
           } else {
             setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
             setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
@@ -206,9 +215,12 @@ export default function MenuPage({ params }) {
       });
       setCommandes([]);
       setAllItems({});
+      // Libérer la table via RPC (bypass RLS)
+      await supabase.rpc('update_table_statut', { table_id: tableId, nouveau_statut: 'libre' });
+      sessionStorage.setItem(`table_cloturee_${tableId}`, 'true');
       setTableCloturee(true);
+      recuAffiche.current = true;  // verrou définitif — aucun appel ultérieur possible
       setShowRecu(true);
-      recuAffiche.current = true;  // verrou définitif
     } catch (err) {
       console.error('afficherRecu error:', err);
     } finally {
@@ -241,10 +253,10 @@ export default function MenuPage({ params }) {
   }
 
   async function marquerTableOccupee(tid) {
-    const { error } = await supabase
-      .from('tables')
-      .update({ statut: 'occupee' })
-      .eq('id', tid);
+    const { error } = await supabase.rpc('update_table_statut', {
+      table_id: tid,
+      nouveau_statut: 'occupee',
+    });
     if (error) {
       console.error('Erreur update table statut:', error.message, error.code);
     }
@@ -330,9 +342,12 @@ export default function MenuPage({ params }) {
         <div style={{ fontSize: 64, marginBottom: 20 }}>🙏</div>
         <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 10 }}>Merci de votre visite !</div>
         <div style={{ fontSize: 14, color: C.gray, lineHeight: 1.6, marginBottom: 28 }}>Nous espérons vous revoir bientôt chez {restaurant.nom} !</div>
-        <button onClick={() => setShowRecu(true)} style={{ background: C.primary, border: 'none', borderRadius: 14, padding: '13px 28px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-          📄 Voir mon reçu
-        </button>
+        {recuData && (
+          <button onClick={() => setShowRecu(true)} style={{ background: C.primary, border: 'none', borderRadius: 14, padding: '13px 28px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 16 }}>
+            📄 Voir mon reçu
+          </button>
+        )}
+        <div style={{ fontSize: 13, color: C.gray, marginTop: 8 }}>Pour commander à nouveau, scannez le QR code de votre table.</div>
       </div>
     );
   }

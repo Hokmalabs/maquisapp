@@ -175,13 +175,25 @@ export default function CommandesPage() {
   async function ouvrirGroupe(group) {
     setLoadingItems(true)
     setSelectedGroup(group)
-    // ─── FIX BUG 3 : charger tous les items en une seule fois ────────────────
     const items = {}
     await Promise.all(group.cmds.map(async (cmd) => {
       const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id)
       items[cmd.id] = data || []
+      // Recalculer le total depuis les items réels (cmd.total peut être 0 en base)
+      const totalCmd = (data || []).reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0)
+      if (totalCmd !== cmd.total) {
+        await supabase.from('commandes').update({ total: totalCmd }).eq('id', cmd.id)
+      }
     }))
     setGroupItems(items)
+    // Mettre à jour les totaux dans selectedGroup depuis les items chargés
+    setSelectedGroup(prev => ({
+      ...prev,
+      cmds: prev.cmds.map(cmd => ({
+        ...cmd,
+        total: (items[cmd.id] || []).reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0)
+      }))
+    }))
     setLoadingItems(false)
   }
 

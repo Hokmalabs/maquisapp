@@ -77,11 +77,11 @@ export default function AbonnementPage() {
             <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,.8)', marginBottom: 12 }}>Effectuez votre paiement :</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <span style={{ fontSize: 18 }}>🌊</span>
-              <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Wave : <span style={{ color: '#FF6B35' }}>[NUMERO_WAVE]</span></span>
+              <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Wave : <span style={{ color: '#FF6B35' }}>07 87 98 76 37</span></span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 18 }}>🟠</span>
-              <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Orange Money : <span style={{ color: '#FF6B35' }}>[NUMERO_ORANGE]</span></span>
+              <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Orange Money : <span style={{ color: '#FF6B35' }}>07 87 98 76 37</span></span>
             </div>
             <div style={{ marginTop: 10, fontSize: 12, color: 'rgba(255,255,255,.4)', fontStyle: 'italic' }}>
               Montant : {planChoisi === 'mensuel' ? '15 000 FCFA' : '120 000 FCFA'}
