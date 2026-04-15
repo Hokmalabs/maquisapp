@@ -18,10 +18,10 @@ const STATUT_CFG = {
 }
 
 const MODES_PAIEMENT = [
+  { id: 'cash',        label: 'Espèces',        icon: '💵' },
   { id: 'wave',         label: 'Wave',          icon: '🌊' },
   { id: 'orange_money', label: 'Orange Money',  icon: '🟠' },
   { id: 'mtn_money',   label: 'MTN Money',     icon: '💛' },
-  { id: 'cash',        label: 'Espèces',       icon: '💵' },
   { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
 ]
 
@@ -233,20 +233,30 @@ export default function CommandesPage() {
   }
 
   async function cloturerTout(group, modePaiement) {
+    if (!modePaiement) return
     setUpdating(true)
-    for (const cmd of group.cmds) {
-      if (!['cloture', 'annule'].includes(cmd.statut)) {
-        await supabase.from('commandes')
-          .update({ statut: 'cloture', mode_paiement: modePaiement })
-          .eq('id', cmd.id)
+    try {
+      const tableId = group.tableId || group.table?.id || group.cmds[0]?.table_id
+      for (const cmd of group.cmds) {
+        if (!['cloture', 'annule'].includes(cmd.statut)) {
+          const { error } = await supabase.from('commandes')
+            .update({ statut: 'cloture', mode_paiement: modePaiement, paye: true })
+            .eq('id', cmd.id)
+          if (error) console.error('Erreur clôture:', error)
+        }
       }
+      if (tableId) {
+        await supabase.rpc('update_table_statut', {
+          table_id: tableId,
+          nouveau_statut: 'libre',
+        })
+      }
+      await refreshCommandes(restaurant.id)
+    } finally {
+      setUpdating(false)
+      setSelectedGroup(null)
+      setGroupItems({})
     }
-    const tableId = group.tableId || group.table?.id || group.cmds[0]?.table_id
-    if (tableId) {
-      await supabase.from('tables').update({ statut: 'libre' }).eq('id', tableId)
-    }
-    setUpdating(false)
-    await refreshCommandes(restaurant.id)
   }
 
   async function supprimerItem(itemId, cmdId) {
@@ -280,10 +290,18 @@ export default function CommandesPage() {
       const items = itemsSnapshot[cmd.id] || []
       allItems.push(...items)
     }
-    // Total depuis les items — source de vérité absolue, jamais depuis cmd.total
-    const total = allItems.reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0)
-    const modePaiement = group.cmds[group.cmds.length - 1]?.mode_paiement || ''
-    setTicketData({ group, allItems, total, modePaiement, restaurant, date: new Date() })
+    // Total calculé depuis les items - jamais depuis cmd.total
+    const total = allItems.reduce(
+      (s, i) => s + ((i.prix_unitaire || 0) * (i.quantite || 0)), 0
+    )
+    setTicketData({
+      group,
+      allItems,
+      total,
+      modePaiement: group.cmds[group.cmds.length - 1]?.mode_paiement || '',
+      restaurant,
+      date: new Date(),
+    })
     setShowTicket(true)
   }
 
@@ -553,7 +571,7 @@ export default function CommandesPage() {
 
 function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaurant, onClose, onChangerStatut, onSupprimerItem, onAnnuler, onCloturerTout, onTicket, onAfficherBonCuisine, formatCFA, getTemps }) {
   const [showEncaisser, setShowEncaisser] = useState(false)
-  const [modePaiement, setModePaiement] = useState('')
+  const [modePaiement, setModePaiement] = useState('cash')
 
   const allGroupItems = Object.values(groupItems).flat()
   const totalGroupe = allGroupItems.length > 0
@@ -563,15 +581,14 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
 
   async function handleCloturerEtTicket() {
     if (!modePaiement || updating) return
-    // Deep-copy des items avant clôture (les items disparaissent du state après)
+    // Capturer items AVANT clôture (disparaissent du state après)
     const itemsSnapshot = {}
-    for (const [cmdId, items] of Object.entries(groupItems)) {
-      itemsSnapshot[cmdId] = items.map(it => ({ ...it }))
+    for (const cmd of group.cmds) {
+      itemsSnapshot[cmd.id] = [...(groupItems[cmd.id] || [])]
     }
-    const groupSnapshot = { ...group, cmds: [...group.cmds] }
+    const groupSnapshot = { ...group, cmds: group.cmds.map(c => ({ ...c })) }
     await onCloturerTout(group, modePaiement)
     onClose()
-    // preparerEtOuvrirTicket calcule le total depuis itemsSnapshot
     onTicket(groupSnapshot, itemsSnapshot)
   }
 
@@ -698,12 +715,21 @@ function TicketCaisse({ data, onClose }) {
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement)
 
   const lignes = allItems.reduce((acc, item) => {
-    const key = item.nom_plat + '__' + item.prix_unitaire
-    if (acc[key]) { acc[key].quantite += (item.quantite || 1); acc[key].total += (item.prix_unitaire || 0) * (item.quantite || 1) }
-    else acc[key] = { nom: item.nom_plat, quantite: item.quantite || 1, prix: item.prix_unitaire || 0, total: (item.prix_unitaire || 0) * (item.quantite || 1) }
+    const key = (item.nom_plat || '') + '__' + (item.prix_unitaire || 0)
+    if (acc[key]) {
+      acc[key].quantite += (item.quantite || 0)
+      acc[key].total += (item.prix_unitaire || 0) * (item.quantite || 0)
+    } else {
+      acc[key] = {
+        nom: item.nom_plat || '',
+        quantite: item.quantite || 0,
+        prix: item.prix_unitaire || 0,
+        total: (item.prix_unitaire || 0) * (item.quantite || 0),
+      }
+    }
     return acc
   }, {})
-  const totalAffiche = Object.values(lignes).reduce((s, l) => s + l.total, 0)
+  const totalTicket = Object.values(lignes).reduce((s, l) => s + l.total, 0)
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }}>
@@ -739,7 +765,7 @@ function TicketCaisse({ data, onClose }) {
             <div style={{ borderTop: '1px dashed #ccc', margin: '10px 0' }}></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 14 }}>
               <span>TOTAL</span>
-              <span>{totalAffiche.toLocaleString()} FCFA</span>
+              <span>{totalTicket.toLocaleString()} FCFA</span>
             </div>
             {modePaie && <div style={{ marginTop: 6, fontSize: 11 }}>Paiement : {modePaie.icon} {modePaie.label}</div>}
             <div style={{ borderTop: '1px dashed #ccc', margin: '10px 0' }}></div>

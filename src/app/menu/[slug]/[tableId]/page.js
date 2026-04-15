@@ -51,7 +51,7 @@ export default function MenuPage({ params }) {
   const [sending, setSending]         = useState(false);
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
-  const [notificationSuppression, setNotificationSuppression] = useState(null);
+  const [itemSupprime, setItemSupprime] = useState(null);
   const catRefs    = useRef({});
   const sendingRef = useRef(false);
   const recuEnCours = useRef(false);
@@ -164,88 +164,43 @@ export default function MenuPage({ params }) {
       .on('postgres_changes', {
         event: 'DELETE', schema: 'public', table: 'commande_items',
       }, (payload) => {
-        const deletedId = payload.old?.id;
-        if (!deletedId) return;
-        // Retirer l'item du state local (accès au state courant via prev)
+        const nomPlat = payload.old?.nom_plat || 'Un article';
+        setItemSupprime(nomPlat);
         setAllItems(prev => {
           const next = { ...prev };
-          let found = false;
           for (const cmdId in next) {
-            const before = next[cmdId];
-            const after = before.filter(i => i.id !== deletedId);
-            if (after.length !== before.length) {
-              next[cmdId] = after;
-              found = true;
-              // Recalculer le total de la commande concernée
-              const newTotal = after.reduce((s, i) => s + i.prix_unitaire * i.quantite, 0);
-              setCommandes(cs => cs.map(c => c.id === cmdId ? { ...c, total: newTotal } : c));
-            }
+            next[cmdId] = next[cmdId].filter(i => i.id !== payload.old?.id);
           }
-          return found ? next : prev;
+          return next;
         });
-        setNotificationSuppression('Un article a été retiré de votre commande par le restaurant');
-        setTimeout(() => setNotificationSuppression(null), 5000);
       })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [restaurant, tableId]);
 
   async function afficherRecu() {
-    if (recuEnCours.current || recuAffiche.current) return;
+    if (recuEnCours.current) return;
     recuEnCours.current = true;
 
     try {
       const { data: cmdsCloturees } = await supabase
-        .from('commandes').select('id, mode_paiement, created_at').eq('table_id', tableId)
+        .from('commandes').select('*').eq('table_id', tableId)
         .eq('statut', 'cloture').order('created_at', { ascending: true });
 
       if (!cmdsCloturees?.length) return;
 
-      const cmdIds = cmdsCloturees.map(c => c.id);
-
-      // UNE SEULE requête pour tous les items
-      const { data: tousLesItems } = await supabase
-        .from('commande_items').select('nom_plat, prix_unitaire, quantite')
-        .in('commande_id', cmdIds);
-
-      // Agrégation côté JS — une seule fois, avant setRecuData
-      const itemsAgreges = {};
-      for (const item of (tousLesItems || [])) {
-        const key = item.nom_plat + '__' + item.prix_unitaire;
-        if (itemsAgreges[key]) {
-          itemsAgreges[key].quantite += item.quantite;
-          itemsAgreges[key].total += item.prix_unitaire * item.quantite;
-        } else {
-          itemsAgreges[key] = {
-            nom: item.nom_plat,
-            quantite: item.quantite,
-            prix: item.prix_unitaire,
-            total: item.prix_unitaire * item.quantite,
-          };
-        }
-      }
-      const lignesFinales = Object.values(itemsAgreges);
-      const totalFinal = lignesFinales.reduce((s, l) => s + l.total, 0);
-
-      const modePaie = cmdsCloturees[cmdsCloturees.length - 1]?.mode_paiement || '';
-      const { data: tblFresh } = await supabase.from('tables').select('*').eq('id', tableId).single();
+      const totalFinal = cmdsCloturees.reduce((s, c) => s + (c.total || 0), 0);
 
       setRecuData({
-        restaurant, table: tblFresh, commandes: cmdsCloturees,
-        items: lignesFinales,  // déjà agrégés
-        total: totalFinal,     // calculé depuis les lignes
-        modePaiement: modePaie, date: new Date(),
+        restaurant,
+        total: totalFinal,
+        modePaiement: cmdsCloturees[cmdsCloturees.length - 1]?.mode_paiement || '',
+        date: new Date(),
       });
       setCommandes([]);
       setAllItems({});
-      // Libérer la table via RPC (bypass RLS)
-      await supabase.rpc('update_table_statut', { table_id: tableId, nouveau_statut: 'libre' });
-      sessionStorage.setItem(`table_cloturee_${tableId}`, 'true');
       setTableCloturee(true);
-      recuAffiche.current = true;  // verrou définitif — aucun appel ultérieur possible
       setShowRecu(true);
-    } catch (err) {
-      console.error('afficherRecu error:', err);
     } finally {
       recuEnCours.current = false;
     }
@@ -390,9 +345,19 @@ export default function MenuPage({ params }) {
         .btn-cmd:active { transform: scale(0.97); opacity:.9; }
       `}</style>
 
-      {notificationSuppression && (
-        <div style={{ position: 'fixed', top: 80, left: 16, right: 16, background: '#FFB800', borderRadius: 12, padding: '10px 14px', zIndex: 300, fontSize: 13, fontWeight: 600, color: '#1A1A2E', textAlign: 'center', animation: 'slideUp .3s ease' }}>
-          ⚠️ {notificationSuppression}
+      {itemSupprime && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 24px', maxWidth: 320, width: '100%', textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#1A1A2E', marginBottom: 8 }}>Article non disponible</div>
+            <div style={{ fontSize: 14, color: '#8A8A9A', marginBottom: 20, lineHeight: 1.5 }}>
+              "{itemSupprime}" a été retiré de votre commande par le restaurant.
+            </div>
+            <button onClick={() => setItemSupprime(null)}
+              style={{ width: '100%', background: '#FF6B35', border: 'none', borderRadius: 14, padding: '13px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              ✅ J'ai compris
+            </button>
+          </div>
         </div>
       )}
 
@@ -541,7 +506,7 @@ export default function MenuPage({ params }) {
       )}
       {showRecu && recuData && (
         <div style={{ position: 'fixed', inset: 0, background: C.bg, zIndex: 500, overflowY: 'auto', animation: 'fadeIn .3s' }}>
-          <RecuNumerique data={recuData} onClose={() => setShowRecu(false)} tableCloturee={tableCloturee} />
+          <RecuNumerique data={recuData} />
         </div>
       )}
     </div>
@@ -726,95 +691,38 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
   );
 }
 
-function RecuNumerique({ data, onClose, tableCloturee }) {
-  const { restaurant, table, items, total, modePaiement, date, commandes } = data;
-  const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement);
-
-  // items est déjà agrégé par afficherRecu() — on affiche directement
-  const lignes = items;
-  const totalVerifie = total;
+function RecuNumerique({ data }) {
+  const modePaie = MODES_PAIEMENT.find(m => m.id === data.modePaiement);
+  const dateStr = new Date(data.date).toLocaleDateString('fr-FR', {
+    day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F5F5F5', fontFamily: "'DM Sans', system-ui", padding: '20px 16px 40px' }}>
+    <div style={{ minHeight: '100vh', background: '#1A1A2E', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui", padding: 24, textAlign: 'center' }}>
       <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #recu-print, #recu-print * { visibility: visible; }
-          #recu-print { position: fixed; left: 0; top: 0; width: 80mm; font-size: 11px; }
-          .no-print { display: none !important; }
-        }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
       `}</style>
-      <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-        {!tableCloturee && <button onClick={onClose} style={{ background: '#F0F0F5', border: 'none', borderRadius: 10, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>}
-        <div style={{ fontSize: 17, fontWeight: 800, color: '#1A1A2E' }}>Votre reçu</div>
+      <div style={{ fontSize: 64, marginBottom: 20, animation: 'float 3s ease-in-out infinite' }}>🙏</div>
+      <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 8 }}>Merci de votre visite !</div>
+      <div style={{ fontSize: 14, color: 'rgba(255,255,255,.6)', marginBottom: 28, lineHeight: 1.6 }}>
+        Nous espérons vous revoir bientôt chez{' '}
+        <span style={{ color: '#FF6B35', fontWeight: 700 }}>{data.restaurant?.nom}</span>
       </div>
-      <div id="recu-print" style={{ background: '#fff', borderRadius: 20, padding: '24px 20px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', maxWidth: 400, margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', borderBottom: '1px dashed #E8E8F0', paddingBottom: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 32, marginBottom: 6 }}>🍽️</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#1A1A2E' }}>{restaurant?.nom}</div>
-          {restaurant?.ville && <div style={{ fontSize: 12, color: '#8A8A9A', marginTop: 2 }}>{restaurant.ville}</div>}
-          {restaurant?.telephone && <div style={{ fontSize: 12, color: '#8A8A9A' }}>{restaurant.telephone}</div>}
-          <div style={{ marginTop: 10, fontSize: 11, color: '#8A8A9A' }}>{dateStr}</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#1A1A2E', marginTop: 4 }}>Table {table?.numero} — {table?.zone || 'Salle'}</div>
-          {commandes?.length > 1 && <div style={{ fontSize: 11, color: '#FF6B35', marginTop: 3 }}>{commandes.length} commandes groupées</div>}
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          {lignes.map((l, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #F5F5F5' }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{l.nom}</div>
-                <div style={{ fontSize: 11, color: '#8A8A9A' }}>{l.prix.toLocaleString()} F × {l.quantite}</div>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E' }}>{l.total.toLocaleString()} F</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ borderTop: '2px solid #1A1A2E', paddingTop: 12, marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: '#1A1A2E' }}>TOTAL</span>
-            <span style={{ fontSize: 20, fontWeight: 800, color: '#FF6B35' }}>{totalVerifie.toLocaleString()} FCFA</span>
+      <div style={{ background: 'rgba(255,255,255,.08)', borderRadius: 16, padding: '20px 24px', marginBottom: 20, width: '100%', maxWidth: 300 }}>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 4 }}>Montant réglé</div>
+        <div style={{ fontSize: 32, fontWeight: 800, color: '#FF6B35' }}>{(data.total || 0).toLocaleString()} FCFA</div>
+        {modePaie && (
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,.5)', marginTop: 6 }}>
+            {modePaie.icon} {modePaie.label}
           </div>
-          {modePaie && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, background: '#F5F5F5', borderRadius: 8, padding: '6px 10px' }}>
-              <span style={{ fontSize: 16 }}>{modePaie.icon}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#1A1A2E' }}>Paiement : {modePaie.label}</span>
-            </div>
-          )}
-        </div>
-        <div style={{ textAlign: 'center', borderTop: '1px dashed #E8E8F0', paddingTop: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E', marginBottom: 4 }}>Merci de votre visite ! 🙏</div>
-          <div style={{ fontSize: 11, color: '#8A8A9A' }}>À bientôt chez {restaurant?.nom}</div>
-          <div style={{ fontSize: 10, color: '#ccc', marginTop: 8 }}>Reçu généré par MaquisApp</div>
-        </div>
+        )}
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,.3)', marginTop: 4 }}>{dateStr}</div>
       </div>
-      <div className="no-print" style={{ maxWidth: 400, margin: '16px auto 0', display: 'flex', gap: 10 }}>
-        <button onClick={() => window.print()}
-          style={{ flex: 1, background: '#1A1A2E', border: 'none', borderRadius: 14, padding: '13px 10px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-          🖨️ Imprimer
-        </button>
-        <button onClick={async () => {
-          try {
-            const { default: html2canvas } = await import('html2canvas')
-            const el = document.getElementById('recu-print')
-            const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#fff' })
-            const link = document.createElement('a')
-            link.download = `recu-table-${table?.numero || ''}.png`
-            link.href = canvas.toDataURL('image/png')
-            link.click()
-          } catch {
-            window.print()
-          }
-        }}
-          style={{ flex: 1, background: '#FF6B35', border: 'none', borderRadius: 14, padding: '13px 10px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-          ⬇️ Télécharger
-        </button>
+      <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', maxWidth: 260, lineHeight: 1.6 }}>
+        Pour commander à nouveau, scannez le QR code de votre table
       </div>
-      {tableCloturee && (
-        <div className="no-print" style={{ maxWidth: 400, margin: '10px auto 0', textAlign: 'center', fontSize: 12, color: '#8A8A9A' }}>
-          Pour commander à nouveau, scannez le QR code de votre table.
-        </div>
-      )}
+      <div style={{ marginTop: 32, fontSize: 11, color: 'rgba(255,255,255,.2)' }}>Reçu généré par MaquisApp</div>
     </div>
   );
 }
