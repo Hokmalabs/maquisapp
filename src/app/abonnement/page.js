@@ -102,7 +102,7 @@ export default function AbonnementPage() {
             <div style={{ fontSize: 14, fontWeight: 700, color: '#00C851', marginBottom: 6 }}>✅ Merci pour votre paiement !</div>
             <div style={{ fontSize: 13, color: 'rgba(255,255,255,.6)', lineHeight: 1.6 }}>
               Votre activation sera confirmée sous 24h.<br />
-              Contactez-nous sur WhatsApp : <span style={{ color: '#FF6B35', fontWeight: 700 }}>[NUMERO]</span>
+              Contactez-nous sur WhatsApp : <span style={{ color: '#FF6B35', fontWeight: 700 }}>07 87 98 76 37</span>
             </div>
           </div>
         )}

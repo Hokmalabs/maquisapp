@@ -51,6 +51,7 @@ export default function MenuPage({ params }) {
   const [sending, setSending]         = useState(false);
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
+  const [notificationSuppression, setNotificationSuppression] = useState(null);
   const catRefs    = useRef({});
   const sendingRef = useRef(false);
   const recuEnCours = useRef(false);
@@ -143,25 +144,47 @@ export default function MenuPage({ params }) {
           });
         } else if (s === 'cloture') {
           if (recuEnCours.current || recuAffiche.current) return;
-
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          if (recuAffiche.current) return;
-
-          const { data: remaining } = await supabase
-            .from('commandes').select('id').eq('table_id', tableId)
-            .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
-
-          if (!remaining?.length) {
-            await afficherRecu();
-          } else {
-            setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
-            setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
-          }
+          setTimeout(async () => {
+            if (recuAffiche.current) return;
+            const { data: remaining } = await supabase
+              .from('commandes').select('id').eq('table_id', tableId)
+              .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
+            if (!remaining?.length) {
+              await afficherRecu();
+            } else {
+              setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
+              setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
+            }
+          }, 1500);
         } else if (s === 'annule') {
           setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
           setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
         }
+      })
+      .on('postgres_changes', {
+        event: 'DELETE', schema: 'public', table: 'commande_items',
+      }, (payload) => {
+        const deletedId = payload.old?.id;
+        if (!deletedId) return;
+        // Retirer l'item du state local (accès au state courant via prev)
+        setAllItems(prev => {
+          const next = { ...prev };
+          let found = false;
+          for (const cmdId in next) {
+            const before = next[cmdId];
+            const after = before.filter(i => i.id !== deletedId);
+            if (after.length !== before.length) {
+              next[cmdId] = after;
+              found = true;
+              // Recalculer le total de la commande concernée
+              const newTotal = after.reduce((s, i) => s + i.prix_unitaire * i.quantite, 0);
+              setCommandes(cs => cs.map(c => c.id === cmdId ? { ...c, total: newTotal } : c));
+            }
+          }
+          return found ? next : prev;
+        });
+        setNotificationSuppression('Un article a été retiré de votre commande par le restaurant');
+        setTimeout(() => setNotificationSuppression(null), 5000);
       })
       .subscribe();
     return () => supabase.removeChannel(ch);
@@ -173,7 +196,7 @@ export default function MenuPage({ params }) {
 
     try {
       const { data: cmdsCloturees } = await supabase
-        .from('commandes').select('*').eq('table_id', tableId)
+        .from('commandes').select('id, mode_paiement, created_at').eq('table_id', tableId)
         .eq('statut', 'cloture').order('created_at', { ascending: true });
 
       if (!cmdsCloturees?.length) return;
@@ -366,6 +389,12 @@ export default function MenuPage({ params }) {
         .cat-chip:active { transform: scale(0.95); }
         .btn-cmd:active { transform: scale(0.97); opacity:.9; }
       `}</style>
+
+      {notificationSuppression && (
+        <div style={{ position: 'fixed', top: 80, left: 16, right: 16, background: '#FFB800', borderRadius: 12, padding: '10px 14px', zIndex: 300, fontSize: 13, fontWeight: 600, color: '#1A1A2E', textAlign: 'center', animation: 'slideUp .3s ease' }}>
+          ⚠️ {notificationSuppression}
+        </div>
+      )}
 
       {/* HEADER */}
       <div style={{ background: C.white, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>

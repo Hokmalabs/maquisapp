@@ -175,25 +175,27 @@ export default function CommandesPage() {
   async function ouvrirGroupe(group) {
     setLoadingItems(true)
     setSelectedGroup(group)
+
     const items = {}
+    const cmdsAvecVraiTotal = []
+
     await Promise.all(group.cmds.map(async (cmd) => {
       const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id)
-      items[cmd.id] = data || []
-      // Recalculer le total depuis les items réels (cmd.total peut être 0 en base)
-      const totalCmd = (data || []).reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0)
-      if (totalCmd !== cmd.total) {
-        await supabase.from('commandes').update({ total: totalCmd }).eq('id', cmd.id)
+      const itemsCmd = data || []
+      items[cmd.id] = itemsCmd
+
+      // Calculer le vrai total depuis les items (jamais depuis cmd.total)
+      const vraiTotal = itemsCmd.reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0)
+      cmdsAvecVraiTotal.push({ ...cmd, total: vraiTotal })
+
+      // Corriger en base si nécessaire
+      if (vraiTotal !== cmd.total) {
+        await supabase.from('commandes').update({ total: vraiTotal }).eq('id', cmd.id)
       }
     }))
+
     setGroupItems(items)
-    // Mettre à jour les totaux dans selectedGroup depuis les items chargés
-    setSelectedGroup(prev => ({
-      ...prev,
-      cmds: prev.cmds.map(cmd => ({
-        ...cmd,
-        total: (items[cmd.id] || []).reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0)
-      }))
-    }))
+    setSelectedGroup(prev => ({ ...prev, cmds: cmdsAvecVraiTotal }))
     setLoadingItems(false)
   }
 
@@ -247,21 +249,16 @@ export default function CommandesPage() {
     await refreshCommandes(restaurant.id)
   }
 
-  // ─── FIX BUG 3 : supprimer item sans recharger depuis la DB ────────────────
   async function supprimerItem(itemId, cmdId) {
     await supabase.from('commande_items').delete().eq('id', itemId)
-    // Mettre à jour le state local directement (pas de rechargement)
     const newItems = (groupItems[cmdId] || []).filter(i => i.id !== itemId)
     const newTotal = newItems.reduce((s, i) => s + i.prix_unitaire * i.quantite, 0)
     await supabase.from('commandes').update({ total: newTotal }).eq('id', cmdId)
-    // Mettre à jour groupItems localement
     setGroupItems(prev => ({ ...prev, [cmdId]: newItems }))
-    // Mettre à jour le total dans selectedGroup localement
     setSelectedGroup(prev => ({
       ...prev,
       cmds: prev.cmds.map(c => c.id === cmdId ? { ...c, total: newTotal } : c)
     }))
-    // NE PAS appeler refreshCommandes ici → c'est ce qui causait le bug
   }
 
   async function annulerCommande(cmd) {
@@ -277,17 +274,14 @@ export default function CommandesPage() {
     await refreshCommandes(restaurant.id)
   }
 
-  // ─── FIX BUG 5 : capturer les données du ticket AVANT de fermer le modal ──
-  function preparerEtOuvrirTicket(group, itemsSnapshot, totalForce) {
+  function preparerEtOuvrirTicket(group, itemsSnapshot) {
     const allItems = []
     for (const cmd of group.cmds) {
       const items = itemsSnapshot[cmd.id] || []
       allItems.push(...items)
     }
-    // totalForce est passé quand cmd.total est déjà 0 après clôture
-    const total = totalForce != null
-      ? totalForce
-      : allItems.reduce((s, it) => s + (it.prix_unitaire || 0) * (it.quantite || 1), 0)
+    // Total depuis les items — source de vérité absolue, jamais depuis cmd.total
+    const total = allItems.reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0)
     const modePaiement = group.cmds[group.cmds.length - 1]?.mode_paiement || ''
     setTicketData({ group, allItems, total, modePaiement, restaurant, date: new Date() })
     setShowTicket(true)
@@ -561,27 +555,24 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
   const [showEncaisser, setShowEncaisser] = useState(false)
   const [modePaiement, setModePaiement] = useState('')
 
-  const totalGroupe = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
+  const allGroupItems = Object.values(groupItems).flat()
+  const totalGroupe = allGroupItems.length > 0
+    ? allGroupItems.reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0)
+    : group.cmds.reduce((s, c) => s + (c.total || 0), 0) // fallback pendant le loading
   const toutesServies = group.cmds.every(c => c.statut === 'servi')
 
-  // ─── FIX BUG 5 : passer groupItems au ticket AVANT de fermer ─────────────
   async function handleCloturerEtTicket() {
     if (!modePaiement || updating) return
-    // Deep-copy des items avant clôture (cmd.total sera 0 après)
+    // Deep-copy des items avant clôture (les items disparaissent du state après)
     const itemsSnapshot = {}
     for (const [cmdId, items] of Object.entries(groupItems)) {
       itemsSnapshot[cmdId] = items.map(it => ({ ...it }))
     }
-    // Calculer le total depuis les items (source de vérité)
-    const allItemsNow = Object.values(itemsSnapshot).flat()
-    const totalCalcule = allItemsNow.reduce((s, it) => s + (it.prix_unitaire || 0) * (it.quantite || 1), 0)
     const groupSnapshot = { ...group, cmds: [...group.cmds] }
-    // Clôturer
     await onCloturerTout(group, modePaiement)
-    // Fermer le modal
     onClose()
-    // Ouvrir le ticket avec total calculé avant clôture
-    onTicket(groupSnapshot, itemsSnapshot, totalCalcule)
+    // preparerEtOuvrirTicket calcule le total depuis itemsSnapshot
+    onTicket(groupSnapshot, itemsSnapshot)
   }
 
   return (
@@ -702,7 +693,7 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
 }
 
 function TicketCaisse({ data, onClose }) {
-  const { group, allItems, total, modePaiement, restaurant, date } = data
+  const { group, allItems, modePaiement, restaurant, date } = data
   const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement)
 
