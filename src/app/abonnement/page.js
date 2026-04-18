@@ -8,7 +8,7 @@ export default function AbonnementPage() {
   const [paiementEnvoye, setPaiementEnvoye] = useState(false)
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0D0D0D', fontFamily: "'DM Sans', system-ui, sans-serif", padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: '#3D0C11', fontFamily: "'DM Sans', system-ui, sans-serif", padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,35 +39,35 @@ export default function AbonnementPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
           {/* Plan Mensuel */}
           <div className="plan-card" onClick={() => setPlanChoisi('mensuel')}
-            style={{ background: planChoisi === 'mensuel' ? 'rgba(255,107,53,.15)' : 'rgba(255,255,255,.06)', border: `2px solid ${planChoisi === 'mensuel' ? '#FF6B35' : 'rgba(255,255,255,.12)'}`, borderRadius: 16, padding: '20px 22px', cursor: 'pointer', transition: 'all .2s' }}>
+            style={{ background: planChoisi === 'mensuel' ? 'rgba(255,107,53,.15)' : 'rgba(255,255,255,.06)', border: `2px solid ${planChoisi === 'mensuel' ? '#8B1A27' : 'rgba(255,255,255,.12)'}`, borderRadius: 16, padding: '20px 22px', cursor: 'pointer', transition: 'all .2s' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginBottom: 4 }}>Plan Mensuel</div>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,.45)' }}>Résiliable à tout moment</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#FF6B35' }}>15 000 F</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#8B1A27' }}>15 000 F</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>/ mois</div>
               </div>
             </div>
-            {planChoisi === 'mensuel' && <div style={{ marginTop: 10, color: '#FF6B35', fontSize: 12, fontWeight: 700 }}>✓ Sélectionné</div>}
+            {planChoisi === 'mensuel' && <div style={{ marginTop: 10, color: '#8B1A27', fontSize: 12, fontWeight: 700 }}>✓ Sélectionné</div>}
           </div>
 
           {/* Plan Annuel */}
           <div className="plan-card" onClick={() => setPlanChoisi('annuel')}
-            style={{ background: planChoisi === 'annuel' ? 'rgba(255,107,53,.15)' : 'rgba(255,255,255,.06)', border: `2px solid ${planChoisi === 'annuel' ? '#FF6B35' : 'rgba(255,255,255,.12)'}`, borderRadius: 16, padding: '20px 22px', cursor: 'pointer', transition: 'all .2s', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: 12, right: 12, background: '#FF6B35', color: '#fff', fontSize: 10, fontWeight: 800, borderRadius: 6, padding: '2px 8px' }}>ÉCONOMISEZ 40 000 F</div>
+            style={{ background: planChoisi === 'annuel' ? 'rgba(255,107,53,.15)' : 'rgba(255,255,255,.06)', border: `2px solid ${planChoisi === 'annuel' ? '#8B1A27' : 'rgba(255,255,255,.12)'}`, borderRadius: 16, padding: '20px 22px', cursor: 'pointer', transition: 'all .2s', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 12, right: 12, background: '#8B1A27', color: '#fff', fontSize: 10, fontWeight: 800, borderRadius: 6, padding: '2px 8px' }}>ÉCONOMISEZ 40 000 F</div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginBottom: 4 }}>Plan Annuel</div>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,.45)' }}>Facturé 120 000 F/an</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#FF6B35' }}>10 000 F</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#8B1A27' }}>10 000 F</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>/ mois</div>
               </div>
             </div>
-            {planChoisi === 'annuel' && <div style={{ marginTop: 10, color: '#FF6B35', fontSize: 12, fontWeight: 700 }}>✓ Sélectionné</div>}
+            {planChoisi === 'annuel' && <div style={{ marginTop: 10, color: '#8B1A27', fontSize: 12, fontWeight: 700 }}>✓ Sélectionné</div>}
           </div>
         </div>
 
@@ -77,11 +77,11 @@ export default function AbonnementPage() {
             <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,.8)', marginBottom: 12 }}>Effectuez votre paiement :</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <span style={{ fontSize: 18 }}>🌊</span>
-              <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Wave : <span style={{ color: '#FF6B35' }}>07 87 98 76 37</span></span>
+              <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Wave : <span style={{ color: '#8B1A27' }}>07 87 98 76 37</span></span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 18 }}>🟠</span>
-              <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Orange Money : <span style={{ color: '#FF6B35' }}>07 87 98 76 37</span></span>
+              <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Orange Money : <span style={{ color: '#8B1A27' }}>07 87 98 76 37</span></span>
             </div>
             <div style={{ marginTop: 10, fontSize: 12, color: 'rgba(255,255,255,.4)', fontStyle: 'italic' }}>
               Montant : {planChoisi === 'mensuel' ? '15 000 FCFA' : '120 000 FCFA'}
@@ -94,7 +94,7 @@ export default function AbonnementPage() {
           <button
             onClick={() => { if (planChoisi) setPaiementEnvoye(true) }}
             disabled={!planChoisi}
-            style={{ width: '100%', background: planChoisi ? '#FF6B35' : 'rgba(255,255,255,.1)', border: 'none', borderRadius: 14, padding: '15px', fontSize: 15, fontWeight: 700, color: planChoisi ? '#fff' : 'rgba(255,255,255,.3)', cursor: planChoisi ? 'pointer' : 'not-allowed', fontFamily: 'inherit', marginBottom: 14 }}>
+            style={{ width: '100%', background: planChoisi ? '#8B1A27' : 'rgba(255,255,255,.1)', border: 'none', borderRadius: 14, padding: '15px', fontSize: 15, fontWeight: 700, color: planChoisi ? '#fff' : 'rgba(255,255,255,.3)', cursor: planChoisi ? 'pointer' : 'not-allowed', fontFamily: 'inherit', marginBottom: 14 }}>
             J'ai effectué mon paiement ✓
           </button>
         ) : (
@@ -102,7 +102,7 @@ export default function AbonnementPage() {
             <div style={{ fontSize: 14, fontWeight: 700, color: '#00C851', marginBottom: 6 }}>✅ Merci pour votre paiement !</div>
             <div style={{ fontSize: 13, color: 'rgba(255,255,255,.6)', lineHeight: 1.6 }}>
               Votre activation sera confirmée sous 24h.<br />
-              Contactez-nous sur WhatsApp : <span style={{ color: '#FF6B35', fontWeight: 700 }}>07 87 98 76 37</span>
+              Contactez-nous sur WhatsApp : <span style={{ color: '#8B1A27', fontWeight: 700 }}>07 87 98 76 37</span>
             </div>
           </div>
         )}

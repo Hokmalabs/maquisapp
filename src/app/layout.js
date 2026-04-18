@@ -22,11 +22,11 @@ export const metadata = {
     statusBarStyle: "black-translucent",
     title: "MaquisApp",
   },
-  themeColor: "#FF6B35",
+  themeColor: "#8B1A27",
 };
 
 export const viewport = {
-  themeColor: "#FF6B35",
+  themeColor: "#8B1A27",
   width: "device-width",
   initialScale: 1,
 };

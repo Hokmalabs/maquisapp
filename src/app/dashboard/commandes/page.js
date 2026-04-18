@@ -4,15 +4,15 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 
 const C = {
-  bg: '#F5F5F5', white: '#FFFFFF', primary: '#FF6B35', primaryLight: '#FFF0EB',
-  dark: '#1A1A2E', gray: '#8A8A9A', grayLight: '#F0F0F5', border: '#E8E8F0',
+  bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
+  dark: '#3D0C11', gray: '#8A8A9A', grayLight: '#F0F0F5', border: '#E8E8F0',
   green: '#00C851', yellow: '#FFB800', red: '#FF3B30', shadow: 'rgba(0,0,0,0.07)',
 }
 
 const STATUT_CFG = {
   en_attente:     { label: 'En attente',     color: '#FFB800', bg: '#FFF8E1', icon: '⏳', next: 'valide',        nextLabel: 'Valider' },
   valide:         { label: 'Validée',        color: '#00C851', bg: '#E8F5E9', icon: '✅', next: 'en_preparation', nextLabel: 'Préparer' },
-  en_preparation: { label: 'En préparation', color: '#FF6B35', bg: '#FFF0EB', icon: '👨‍🍳', next: 'presque_pret',  nextLabel: 'Presque prêt' },
+  en_preparation: { label: 'En préparation', color: '#8B1A27', bg: '#FFF0EB', icon: '👨‍🍳', next: 'presque_pret',  nextLabel: 'Presque prêt' },
   presque_pret:   { label: 'Presque prêt',   color: '#E85520', bg: '#FFE8E0', icon: '🔔', next: 'servi',         nextLabel: 'Servir' },
   servi:          { label: 'Servi',          color: '#00C851', bg: '#E8F5E9', icon: '🍽️', next: 'cloture',       nextLabel: 'Clôturer' },
 }

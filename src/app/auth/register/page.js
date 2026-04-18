@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 const C = {
-  bg: '#0D0D0D', white: '#FFFFFF', primary: '#FF6B35', primaryLight: '#FFF0EB',
-  dark: '#1A1A2E', gray: '#8A8A9A', border: '#E8E8F0', red: '#FF3B30',
+  bg: '#3D0C11', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
+  dark: '#3D0C11', gray: '#8A8A9A', border: '#E8E8F0', red: '#FF3B30',
 }
 
 export default function RegisterPage() {
@@ -89,11 +89,11 @@ export default function RegisterPage() {
         @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
         @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
         @keyframes slideLeft { from{opacity:0;transform:translateX(30px)} to{opacity:1;transform:translateX(0)} }
-        input:focus, select:focus { border-color: #FF6B35 !important; outline: none; }
+        input:focus, select:focus { border-color: #8B1A27 !important; outline: none; }
         .btn-google:hover { background: rgba(255,255,255,.12) !important; }
         .btn-primary:hover { opacity: .92; transform: translateY(-1px); }
         .btn-primary:active, .btn-google:active { transform: scale(0.98); }
-        select option { background: #1A1A2E; color: #fff; }
+        select option { background: #3D0C11; color: #fff; }
       `}</style>
 
       {/* Blobs */}
@@ -167,7 +167,7 @@ export default function RegisterPage() {
                 </select>
               </div>
               <button type="submit" className="btn-primary"
-                style={{ width: '100%', background: 'linear-gradient(135deg, #FF6B35, #FF4500)', border: 'none', borderRadius: 14, padding: '14px', fontSize: 15, fontWeight: 700, color: C.white, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 8px 24px rgba(255,107,53,.3)', transition: 'all .2s' }}>
+                style={{ width: '100%', background: 'linear-gradient(135deg, #8B1A27, #FF4500)', border: 'none', borderRadius: 14, padding: '14px', fontSize: 15, fontWeight: 700, color: C.white, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 8px 24px rgba(255,107,53,.3)', transition: 'all .2s' }}>
                 Suivant →
               </button>
             </div>
@@ -200,13 +200,13 @@ export default function RegisterPage() {
                   type="checkbox"
                   checked={acceptCGU}
                   onChange={e => setAcceptCGU(e.target.checked)}
-                  style={{ marginTop: 2, accentColor: '#FF6B35', width: 16, height: 16, flexShrink: 0 }}
+                  style={{ marginTop: 2, accentColor: '#8B1A27', width: 16, height: 16, flexShrink: 0 }}
                 />
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,.6)', lineHeight: 1.5 }}>
                   J'accepte les{' '}
-                  <a href="/legal/conditions" target="_blank" style={{ color: '#FF6B35', textDecoration: 'none' }}>Conditions d'utilisation</a>
+                  <a href="/legal/conditions" target="_blank" style={{ color: '#8B1A27', textDecoration: 'none' }}>Conditions d'utilisation</a>
                   {' '}et la{' '}
-                  <a href="/legal/confidentialite" target="_blank" style={{ color: '#FF6B35', textDecoration: 'none' }}>Politique de confidentialité</a>
+                  <a href="/legal/confidentialite" target="_blank" style={{ color: '#8B1A27', textDecoration: 'none' }}>Politique de confidentialité</a>
                 </span>
               </div>
 
@@ -222,7 +222,7 @@ export default function RegisterPage() {
                   ← Retour
                 </button>
                 <button type="submit" className="btn-primary" disabled={loading}
-                  style={{ flex: 2, background: 'linear-gradient(135deg, #FF6B35, #FF4500)', border: 'none', borderRadius: 14, padding: '13px', fontSize: 14, fontWeight: 700, color: C.white, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: loading ? .7 : 1, boxShadow: '0 8px 24px rgba(255,107,53,.3)', transition: 'all .2s' }}>
+                  style={{ flex: 2, background: 'linear-gradient(135deg, #8B1A27, #FF4500)', border: 'none', borderRadius: 14, padding: '13px', fontSize: 14, fontWeight: 700, color: C.white, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: loading ? .7 : 1, boxShadow: '0 8px 24px rgba(255,107,53,.3)', transition: 'all .2s' }}>
                   {loading ? 'Création...' : '✅ Créer mon restaurant'}
                 </button>
               </div>

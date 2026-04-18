@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 
 const C = {
-  bg: '#F5F5F5', white: '#FFFFFF', primary: '#FF6B35', primaryDark: '#E85520',
-  primaryLight: '#FFF0EB', dark: '#1A1A2E', gray: '#8A8A9A', grayLight: '#F0F0F5',
+  bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryDark: '#E85520',
+  primaryLight: '#FFF0EB', dark: '#3D0C11', gray: '#8A8A9A', grayLight: '#F0F0F5',
   border: '#E8E8F0', green: '#00C851', yellow: '#FFB800', red: '#FF3B30',
   shadow: 'rgba(0,0,0,0.08)', shadowMd: 'rgba(0,0,0,0.14)',
 };
@@ -14,7 +14,7 @@ const C = {
 const STATUT_CONFIG = {
   en_attente:     { label: 'En attente',     color: '#FFB800', icon: '⏳', bg: '#FFF8E1' },
   valide:         { label: 'Validée',        color: '#00C851', icon: '✅', bg: '#E8F5E9' },
-  en_preparation: { label: 'En préparation', color: '#FF6B35', icon: '👨‍🍳', bg: '#FFF0EB' },
+  en_preparation: { label: 'En préparation', color: '#8B1A27', icon: '👨‍🍳', bg: '#FFF0EB' },
   presque_pret:   { label: 'Presque prêt !', color: '#E85520', icon: '🔔', bg: '#FFE8E0' },
   servi:          { label: 'Servi',          color: '#00C851', icon: '🍽️', bg: '#E8F5E9' },
   cloture:        { label: 'Clôturée',       color: '#8A8A9A', icon: '✔️', bg: '#F5F5F5' },
@@ -300,12 +300,12 @@ export default function MenuPage({ params }) {
         <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div style={{ background: '#fff', borderRadius: 20, padding: '28px 24px', maxWidth: 320, width: '100%', textAlign: 'center' }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#1A1A2E', marginBottom: 8 }}>Article non disponible</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#3D0C11', marginBottom: 8 }}>Article non disponible</div>
             <div style={{ fontSize: 14, color: '#8A8A9A', marginBottom: 20, lineHeight: 1.5 }}>
               "{itemSupprime}" a été retiré de votre commande par le restaurant.
             </div>
             <button onClick={() => setItemSupprime(null)}
-              style={{ width: '100%', background: '#FF6B35', border: 'none', borderRadius: 14, padding: '13px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ width: '100%', background: '#8B1A27', border: 'none', borderRadius: 14, padding: '13px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
               ✅ J'ai compris
             </button>
           </div>
@@ -369,7 +369,7 @@ export default function MenuPage({ params }) {
         )}
 
         {commandes.length === 0 && (
-          <div style={{ margin: '14px 16px 0', borderRadius: 18, background: 'linear-gradient(135deg, #FF6B35 0%, #FF8C42 60%, #FFB347 100%)', padding: '18px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ margin: '14px 16px 0', borderRadius: 18, background: 'linear-gradient(135deg, #8B1A27 0%, #FF8C42 60%, #FFB347 100%)', padding: '18px', position: 'relative', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', right: -10, top: -10, fontSize: 72, opacity: .13 }}>🍽️</div>
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,.85)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Bienvenue !</div>
             <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 4, lineHeight: 1.25 }}>Commandez<br/>directement ici 👇</div>
@@ -499,7 +499,7 @@ function ModalDetailCommande({ cmd, items, onClose }) {
         </div>
         <div style={{ padding: '10px 18px 12px', borderBottom: '1px solid #F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#1A1A2E' }}>Détail commande</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#3D0C11' }}>Détail commande</div>
             <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 1 }}>{cmd.total?.toLocaleString()} FCFA</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -511,10 +511,10 @@ function ModalDetailCommande({ cmd, items, onClose }) {
           <div style={{ display: 'flex', alignItems: 'center' }}>
             {steps.map((s, i) => (
               <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 1 : 'none' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', background: i <= stepIdx ? '#FF6B35' : '#F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: i <= stepIdx ? '#8B1A27' : '#F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {i <= stepIdx ? <span style={{ color: '#fff', fontSize: 11 }}>✓</span> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E8E8F0', display: 'block' }}></span>}
                 </div>
-                {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? '#FF6B35' : '#F0F0F5', margin: '0 3px' }}></div>}
+                {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? '#8B1A27' : '#F0F0F5', margin: '0 3px' }}></div>}
               </div>
             ))}
           </div>
@@ -523,10 +523,10 @@ function ModalDetailCommande({ cmd, items, onClose }) {
           {items.map(item => (
             <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F0F0F5' }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{item.nom_plat}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#3D0C11' }}>{item.nom_plat}</div>
                 <div style={{ fontSize: 11, color: '#8A8A9A' }}>×{item.quantite}</div>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#FF6B35' }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#8B1A27' }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
             </div>
           ))}
         </div>
@@ -544,20 +544,20 @@ function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
       }
       <div style={{ flex: 1, padding: '11px 13px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E', lineHeight: 1.3 }}>{plat.nom}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', lineHeight: 1.3 }}>{plat.nom}</div>
           {!plat.disponible && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Indisponible</div>}
           {plat.disponible && plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: '#FF6B35' }}>{plat.prix.toLocaleString()} F</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#8B1A27' }}>{plat.prix.toLocaleString()} F</div>
           <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             {quantite > 0 && (
               <>
-                <button onClick={onRemove} style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A2E' }}>−</button>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E', minWidth: 14, textAlign: 'center' }}>{quantite}</span>
+                <button onClick={onRemove} style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3D0C11' }}>−</button>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', minWidth: 14, textAlign: 'center' }}>{quantite}</span>
               </>
             )}
-            <button onClick={onAdd} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: '#FF6B35', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
+            <button onClick={onAdd} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: '#8B1A27', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
           </div>
         </div>
       </div>
@@ -574,10 +574,10 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
           <div style={{ width: 36, height: 4, borderRadius: 2, background: '#E8E8F0' }}></div>
         </div>
         <div style={{ padding: '10px 18px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #F0F0F5' }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#1A1A2E' }}>{isNouvelle ? '➕ Nouvelle commande' : 'Mon panier 🛒'}</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#3D0C11' }}>{isNouvelle ? '➕ Nouvelle commande' : 'Mon panier 🛒'}</div>
           <button onClick={onClose} style={{ background: '#F5F5F5', border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
         </div>
-        {isNouvelle && <div style={{ padding: '8px 18px 0', fontSize: 11, color: '#FF6B35', fontWeight: 600 }}>ℹ️ Cette commande sera ajoutée à votre session en cours</div>}
+        {isNouvelle && <div style={{ padding: '8px 18px 0', fontSize: 11, color: '#8B1A27', fontWeight: 600 }}>ℹ️ Cette commande sera ajoutée à votre session en cours</div>}
         <div style={{ overflowY: 'auto', flex: 1, padding: '10px 18px' }}>
           {panier.map(item => {
             const plat = plats.find(p => p.id === item.plat_id);
@@ -586,13 +586,13 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
                 {plat?.image_url ? <img src={plat.image_url} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover' }} />
                   : <div style={{ width: 48, height: 48, borderRadius: 10, background: '#FFF0EB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🍽️</div>}
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{item.nom}</div>
-                  <div style={{ fontSize: 12, color: '#FF6B35', fontWeight: 700 }}>{(item.prix * item.quantite).toLocaleString()} F</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#3D0C11' }}>{item.nom}</div>
+                  <div style={{ fontSize: 12, color: '#8B1A27', fontWeight: 700 }}>{(item.prix * item.quantite).toLocaleString()} F</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                   <button onClick={() => onRemove(item.plat_id)} style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #E8E8F0', background: '#fff', cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
                   <span style={{ fontSize: 13, fontWeight: 700, minWidth: 14, textAlign: 'center' }}>{item.quantite}</span>
-                  <button onClick={() => onAdd(plat)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: '#FF6B35', cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
+                  <button onClick={() => onAdd(plat)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: '#8B1A27', cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
                 </div>
               </div>
             );
@@ -601,10 +601,10 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
         <div style={{ padding: '14px 18px 0', borderTop: '1px solid #F0F0F5' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
             <span style={{ fontSize: 13, color: '#8A8A9A' }}>Total</span>
-            <span style={{ fontSize: 17, fontWeight: 800, color: '#1A1A2E' }}>{total.toLocaleString()} FCFA</span>
+            <span style={{ fontSize: 17, fontWeight: 800, color: '#3D0C11' }}>{total.toLocaleString()} FCFA</span>
           </div>
           <button className="btn-cmd" onClick={onCommander} disabled={sending}
-            style={{ width: '100%', background: sending ? '#ccc' : '#FF6B35', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ width: '100%', background: sending ? '#ccc' : '#8B1A27', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
             {sending ? '⏳ Envoi en cours...' : (isNouvelle ? '✅ Envoyer cette commande' : '✅ Envoyer la commande')}
           </button>
         </div>
@@ -622,14 +622,14 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
           : <div style={{ width: '100%', height: 170, background: 'linear-gradient(135deg, #FFF0EB, #FFE0D5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 56 }}>🍽️</div>}
         <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: '#fff', border: 'none', borderRadius: '50%', width: 34, height: 34, cursor: 'pointer', fontSize: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.14)' }}>✕</button>
         <div style={{ padding: '18px 18px 36px' }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#1A1A2E' }}>{plat.nom}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#3D0C11' }}>{plat.nom}</div>
           {plat.description && <div style={{ fontSize: 13, color: '#8A8A9A', marginTop: 7, lineHeight: 1.6 }}>{plat.description}</div>}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: '#FF6B35' }}>{plat.prix.toLocaleString()} FCFA</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#8B1A27' }}>{plat.prix.toLocaleString()} FCFA</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {quantite > 0 && <button onClick={onRemove} style={{ width: 36, height: 36, borderRadius: 9, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>}
               {quantite > 0 && <span style={{ fontSize: 15, fontWeight: 700 }}>{quantite}</span>}
-              <button onClick={onAdd} style={{ background: '#FF6B35', border: 'none', borderRadius: 9, width: 36, height: 36, cursor: 'pointer', fontSize: 20, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+              <button onClick={onAdd} style={{ background: '#8B1A27', border: 'none', borderRadius: 9, width: 36, height: 36, cursor: 'pointer', fontSize: 20, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
             </div>
           </div>
         </div>
@@ -642,7 +642,7 @@ function EcranFin() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#1A1A2E',
+      background: '#3D0C11',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -696,7 +696,7 @@ function LoadingScreen() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#F5F5F5', fontFamily: 'system-ui' }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>🍽️</div>
-      <div style={{ marginTop: 14, fontSize: 15, fontWeight: 600, color: '#1A1A2E' }}>Chargement du menu...</div>
+      <div style={{ marginTop: 14, fontSize: 15, fontWeight: 600, color: '#3D0C11' }}>Chargement du menu...</div>
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.1)}}`}</style>
     </div>
   );
@@ -706,7 +706,7 @@ function ErrorScreen() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#F5F5F5', fontFamily: 'system-ui', padding: 24 }}>
       <div style={{ fontSize: 44 }}>😕</div>
-      <div style={{ marginTop: 14, fontSize: 17, fontWeight: 700, color: '#1A1A2E' }}>Restaurant introuvable</div>
+      <div style={{ marginTop: 14, fontSize: 17, fontWeight: 700, color: '#3D0C11' }}>Restaurant introuvable</div>
       <div style={{ marginTop: 7, fontSize: 13, color: '#8A8A9A', textAlign: 'center' }}>Vérifiez le QR code ou contactez le restaurant</div>
     </div>
   );

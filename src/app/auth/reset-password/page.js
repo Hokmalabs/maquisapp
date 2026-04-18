@@ -4,8 +4,8 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 
 const C = {
-  bg: '#0D0D0D', white: '#FFFFFF', primary: '#FF6B35',
-  dark: '#1A1A2E', red: '#FF3B30',
+  bg: '#3D0C11', white: '#FFFFFF', primary: '#8B1A27',
+  dark: '#3D0C11', red: '#FF3B30',
 }
 
 export default function ResetPasswordPage() {
@@ -39,7 +39,7 @@ export default function ResetPasswordPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        input:focus { border-color: #FF6B35 !important; outline: none; }
+        input:focus { border-color: #8B1A27 !important; outline: none; }
       `}</style>
 
       {/* Blobs déco */}
@@ -78,7 +78,7 @@ export default function ResetPasswordPage() {
             )}
 
             <button type="submit" disabled={loading}
-              style={{ width: '100%', background: 'linear-gradient(135deg, #FF6B35, #FF4500)', border: 'none', borderRadius: 14, padding: '14px', fontSize: 15, fontWeight: 700, color: C.white, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: loading ? .7 : 1, boxShadow: '0 8px 24px rgba(255,107,53,.3)' }}>
+              style={{ width: '100%', background: 'linear-gradient(135deg, #8B1A27, #FF4500)', border: 'none', borderRadius: 14, padding: '14px', fontSize: 15, fontWeight: 700, color: C.white, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: loading ? .7 : 1, boxShadow: '0 8px 24px rgba(255,107,53,.3)' }}>
               {loading ? 'Mise à jour...' : 'Confirmer le mot de passe →'}
             </button>
           </form>

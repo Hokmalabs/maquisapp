@@ -142,14 +142,14 @@ function CallbackHandler() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0D0D0D', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui", gap: 16 }}>
+    <div style={{ minHeight: '100vh', background: '#3D0C11', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui", gap: 16 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap');
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
       `}</style>
       <div style={{ fontSize: 48, animation: 'float 2s ease-in-out infinite' }}>🍽️</div>
-      <div style={{ width: 36, height: 36, border: '3px solid rgba(255,107,53,.2)', borderTop: '3px solid #FF6B35', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+      <div style={{ width: 36, height: 36, border: '3px solid rgba(255,107,53,.2)', borderTop: '3px solid #8B1A27', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
       <div style={{ fontSize: 14, color: 'rgba(255,255,255,.6)', fontWeight: 500 }}>{status}</div>
     </div>
   )
@@ -158,7 +158,7 @@ function CallbackHandler() {
 export default function AuthCallback() {
   return (
     <Suspense fallback={
-      <div style={{ minHeight: '100vh', background: '#0D0D0D', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100vh', background: '#3D0C11', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ fontSize: 14, color: 'rgba(255,255,255,.6)' }}>Chargement...</div>
       </div>
     }>

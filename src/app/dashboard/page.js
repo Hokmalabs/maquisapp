@@ -6,9 +6,9 @@ import { useRouter } from 'next/navigation'
 const C = {
   bg: '#F5F5F5',
   white: '#FFFFFF',
-  primary: '#FF6B35',
+  primary: '#8B1A27',
   primaryLight: '#FFF0EB',
-  dark: '#1A1A2E',
+  dark: '#3D0C11',
   gray: '#8A8A9A',
   grayLight: '#F0F0F5',
   border: '#E8E8F0',
@@ -21,7 +21,7 @@ const C = {
 const STATUT_CONFIG = {
   en_attente:     { label: 'En attente',     color: '#FFB800', bg: '#FFF8E1', icon: '⏳' },
   valide:         { label: 'Validée',         color: '#00C851', bg: '#E8F5E9', icon: '✅' },
-  en_preparation: { label: 'En préparation',  color: '#FF6B35', bg: '#FFF0EB', icon: '👨‍🍳' },
+  en_preparation: { label: 'En préparation',  color: '#8B1A27', bg: '#FFF0EB', icon: '👨‍🍳' },
   presque_pret:   { label: 'Presque prêt',    color: '#E85520', bg: '#FFE8E0', icon: '🔔' },
   servi:          { label: 'Servi',           color: '#00C851', bg: '#E8F5E9', icon: '🍽️' },
 }
@@ -264,7 +264,7 @@ export default function DashboardPage() {
       {avertissementExpiration && (
         <div style={{ margin: '10px 16px 0', background: '#FFF8E1', border: '1.5px solid #FFB800', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#7A5C00' }}>
-            ⚠️ Votre essai expire dans {avertissementExpiration} jour{avertissementExpiration > 1 ? 's' : ''} — <a href="/abonnement" style={{ color: '#FF6B35', fontWeight: 700 }}>Souscrire maintenant</a>
+            ⚠️ Votre essai expire dans {avertissementExpiration} jour{avertissementExpiration > 1 ? 's' : ''} — <a href="/abonnement" style={{ color: '#8B1A27', fontWeight: 700 }}>Souscrire maintenant</a>
           </span>
           <button onClick={() => setAvertissementExpiration(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#7A5C00', flexShrink: 0 }}>✕</button>
         </div>
@@ -272,11 +272,11 @@ export default function DashboardPage() {
 
       {/* ── BANNIÈRE INSTALL PWA ─────────────────────────────────────── */}
       {showInstallBtn && (
-        <div style={{ margin: '10px 16px 0', background: 'linear-gradient(135deg, #FF6B35, #E85520)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ margin: '10px 16px 0', background: 'linear-gradient(135deg, #8B1A27, #E85520)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>📲 Installer MaquisApp sur votre écran d'accueil</span>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <button onClick={async () => { if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null) } setShowInstallBtn(false) }}
-              style={{ background: '#fff', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#FF6B35', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ background: '#fff', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#8B1A27', cursor: 'pointer', fontFamily: 'inherit' }}>
               Installer
             </button>
             <button onClick={() => setShowInstallBtn(false)} style={{ background: 'rgba(255,255,255,.25)', border: 'none', borderRadius: 8, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
@@ -300,7 +300,7 @@ export default function DashboardPage() {
             overflow: 'hidden',
             background: hasLogo
               ? `url(${restaurant.logo_url}) center/cover no-repeat`
-              : 'linear-gradient(135deg, #FF6B35 0%, #E85520 50%, #1A1A2E 100%)',
+              : 'linear-gradient(135deg, #8B1A27 0%, #E85520 50%, #3D0C11 100%)',
           }}>
             {/* Overlay sombre pour lisibilité */}
             <div style={{ position: 'absolute', inset: 0, background: hasLogo ? 'linear-gradient(to top, rgba(0,0,0,.75) 0%, rgba(0,0,0,.35) 100%)' : 'linear-gradient(135deg, rgba(0,0,0,.2) 0%, rgba(0,0,0,.05) 100%)' }}></div>
@@ -340,10 +340,10 @@ export default function DashboardPage() {
             <div style={{ fontSize: 11, color: C.gray, marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .6 }}>CA du jour</div>
             <div style={{ fontSize: 30, fontWeight: 800, color: C.primary, letterSpacing: -.5 }}>{formatCFA(stats.ca_jour)}</div>
           </div>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg, #FF6B35, #FF8C42)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, boxShadow: '0 4px 14px rgba(255,107,53,.35)' }}>💰</div>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg, #8B1A27, #FF8C42)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, boxShadow: '0 4px 14px rgba(255,107,53,.35)' }}>💰</div>
         </div>
         {[
-          { val: stats.commandes, label: 'Commandes actives', color: C.primary, icon: '📋', bg: '#FF6B35' },
+          { val: stats.commandes, label: 'Commandes actives', color: C.primary, icon: '📋', bg: '#8B1A27' },
           { val: stats.plats, label: 'Plats disponibles', color: C.green, icon: '🍛', bg: '#00C851' },
           { val: stats.tables, label: 'Tables actives', color: '#5B8DEF', icon: '🪑', bg: '#5B8DEF' },
         ].map((s, i) => (
@@ -409,7 +409,7 @@ export default function DashboardPage() {
         <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 12 }}>Navigation</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
-            { icon: '🍽️', label: 'Commandes', desc: 'Suivi temps réel', path: '/dashboard/commandes', circleColor: '#FF6B35', shadow: 'rgba(255,107,53,.35)' },
+            { icon: '🍽️', label: 'Commandes', desc: 'Suivi temps réel', path: '/dashboard/commandes', circleColor: '#8B1A27', shadow: 'rgba(255,107,53,.35)' },
             { icon: '🥘', label: 'Menu', desc: 'Plats & catégories', path: '/dashboard/menu', circleColor: '#00C851', shadow: 'rgba(0,200,81,.3)' },
             { icon: '🪑', label: 'Tables & QR', desc: 'Gérer les tables', path: '/dashboard/tables', circleColor: '#5B8DEF', shadow: 'rgba(91,141,239,.3)' },
             { icon: '📊', label: 'Historique', desc: 'CA & rapports', path: '/dashboard/historique', circleColor: '#9B59B6', shadow: 'rgba(155,89,182,.3)' },

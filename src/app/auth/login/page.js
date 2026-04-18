@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 const C = {
-  bg: '#0D0D0D', white: '#FFFFFF', primary: '#FF6B35', primaryLight: '#FFF0EB',
-  dark: '#1A1A2E', gray: '#8A8A9A', border: '#E8E8F0', red: '#FF3B30',
+  bg: '#3D0C11', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
+  dark: '#3D0C11', gray: '#8A8A9A', border: '#E8E8F0', red: '#FF3B30',
 }
 
 export default function LoginPage() {
@@ -78,7 +78,7 @@ export default function LoginPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
         @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        input:focus { border-color: #FF6B35 !important; outline: none; }
+        input:focus { border-color: #8B1A27 !important; outline: none; }
         .btn-google:hover { background: rgba(255,255,255,.12) !important; }
         .btn-primary:hover { opacity: .92; transform: translateY(-1px); }
         .btn-primary:active, .btn-google:active { transform: scale(0.98); }
@@ -180,7 +180,7 @@ export default function LoginPage() {
           )}
 
           <button type="submit" className="btn-primary" disabled={loading}
-            style={{ width: '100%', background: 'linear-gradient(135deg, #FF6B35, #FF4500)', border: 'none', borderRadius: 14, padding: '14px', fontSize: 15, fontWeight: 700, color: C.white, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'all .2s', opacity: loading ? .7 : 1, boxShadow: '0 8px 24px rgba(255,107,53,.3)' }}>
+            style={{ width: '100%', background: 'linear-gradient(135deg, #8B1A27, #FF4500)', border: 'none', borderRadius: 14, padding: '14px', fontSize: 15, fontWeight: 700, color: C.white, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'all .2s', opacity: loading ? .7 : 1, boxShadow: '0 8px 24px rgba(255,107,53,.3)' }}>
             {loading ? 'Connexion...' : 'Se connecter →'}
           </button>
         </form>

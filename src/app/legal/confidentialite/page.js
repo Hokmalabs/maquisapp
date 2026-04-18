@@ -4,15 +4,15 @@ import { useRouter } from 'next/navigation'
 export default function ConfidentialitePage() {
   const router = useRouter()
   return (
-    <div style={{ minHeight: '100vh', background: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#1A1A2E' }}>
+    <div style={{ minHeight: '100vh', background: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#3D0C11' }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap'); * { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
 
       {/* Header */}
-      <div style={{ background: '#1A1A2E', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ background: '#3D0C11', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
         <button onClick={() => router.push('/')}
           style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16, color: '#fff' }}>←</button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#FF6B35,#FF4500)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🍽️</div>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#8B1A27,#FF4500)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🍽️</div>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>MaquisApp</span>
         </div>
       </div>
@@ -52,7 +52,7 @@ export default function ConfidentialitePage() {
           },
         ].map(section => (
           <div key={section.titre} style={{ marginBottom: 32 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#FF6B35', marginBottom: 10 }}>{section.titre}</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#8B1A27', marginBottom: 10 }}>{section.titre}</h2>
             <p style={{ fontSize: 14, color: '#444', lineHeight: 1.8, whiteSpace: 'pre-line' }}>{section.contenu}</p>
           </div>
         ))}

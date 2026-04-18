@@ -6,7 +6,7 @@ export default function NotFound() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#0D0D0D',
+      background: '#3D0C11',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -25,7 +25,7 @@ export default function NotFound() {
       </div>
       <button onClick={() => router.push('/')}
         style={{
-          background: '#FF6B35', border: 'none', borderRadius: 14,
+          background: '#8B1A27', border: 'none', borderRadius: 14,
           padding: '14px 28px', fontSize: 14, fontWeight: 700,
           color: '#fff', cursor: 'pointer', fontFamily: 'inherit'
         }}>

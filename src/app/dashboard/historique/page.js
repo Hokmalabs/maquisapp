@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
 
 const C = {
-  bg: '#F5F5F5', white: '#FFFFFF', primary: '#FF6B35', primaryLight: '#FFF0EB',
-  dark: '#1A1A2E', gray: '#8A8A9A', grayLight: '#F0F0F5', border: '#E8E8F0',
+  bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
+  dark: '#3D0C11', gray: '#8A8A9A', grayLight: '#F0F0F5', border: '#E8E8F0',
   green: '#00C851', yellow: '#FFB800', red: '#FF3B30', shadow: 'rgba(0,0,0,0.07)',
   purple: '#8B5CF6',
 };
@@ -60,8 +60,8 @@ function BarChart({ data }) {
         const isToday = d.date === today;
         return (
           <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <div style={{ width: '100%', height: h, borderRadius: '3px 3px 0 0', background: isToday ? '#FF6B35' : 'rgba(255,107,53,0.3)', minHeight: 2 }} />
-            <span style={{ fontSize: 7, color: isToday ? '#FF6B35' : 'rgba(255,255,255,.4)', fontWeight: isToday ? 700 : 400 }}>
+            <div style={{ width: '100%', height: h, borderRadius: '3px 3px 0 0', background: isToday ? '#8B1A27' : 'rgba(255,107,53,0.3)', minHeight: 2 }} />
+            <span style={{ fontSize: 7, color: isToday ? '#8B1A27' : 'rgba(255,255,255,.4)', fontWeight: isToday ? 700 : 400 }}>
               {new Date(d.date).getDate()}
             </span>
           </div>

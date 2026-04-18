@@ -84,15 +84,15 @@ export default function CuisinePage({ params }) {
   }
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#1A1A2E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, fontFamily: "'DM Sans', system-ui" }}>
+    <div style={{ minHeight: '100vh', background: '#3D0C11', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, fontFamily: "'DM Sans', system-ui" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');`}</style>
       <div style={{ fontSize: 56 }}>👨‍🍳</div>
-      <div style={{ color: '#FF6B35', fontSize: 16, fontWeight: 600 }}>Chargement cuisine...</div>
+      <div style={{ color: '#8B1A27', fontSize: 16, fontWeight: 600 }}>Chargement cuisine...</div>
     </div>
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: '#1A1A2E', fontFamily: "'DM Sans', system-ui, sans-serif", padding: '16px' }}>
+    <div style={{ minHeight: '100vh', background: '#3D0C11', fontFamily: "'DM Sans', system-ui, sans-serif", padding: '16px' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -103,10 +103,10 @@ export default function CuisinePage({ params }) {
       {/* BANNIÈRE INSTALL PWA */}
       {showInstallBtn && (
         <div style={{ marginBottom: 12, background: 'rgba(255,107,53,.15)', border: '1px solid rgba(255,107,53,.4)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#FF6B35' }}>📲 Installer sur l'écran d'accueil</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#8B1A27' }}>📲 Installer sur l'écran d'accueil</span>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <button onClick={async () => { if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null) } setShowInstallBtn(false) }}
-              style={{ background: '#FF6B35', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ background: '#8B1A27', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
               Installer
             </button>
             <button onClick={() => setShowInstallBtn(false)} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 8, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
@@ -117,7 +117,7 @@ export default function CuisinePage({ params }) {
       {/* HEADER */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, padding: '8px 0' }}>
         <div>
-          <div style={{ color: '#FF6B35', fontSize: 14, fontWeight: 700, marginBottom: 2 }}>ÉCRAN CUISINE</div>
+          <div style={{ color: '#8B1A27', fontSize: 14, fontWeight: 700, marginBottom: 2 }}>ÉCRAN CUISINE</div>
           <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>{restaurant?.nom || '...'}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,.08)', borderRadius: 12, padding: '8px 14px' }}>
@@ -139,14 +139,14 @@ export default function CuisinePage({ params }) {
             const items = cmd.commande_items || []
             const estPresquePret = cmd.statut === 'presque_pret'
             return (
-              <div key={cmd.id} style={{ background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,.3)', animation: 'fadeIn .3s ease', borderTop: `5px solid ${estPresquePret ? '#FF6B35' : '#FFB800'}` }}>
+              <div key={cmd.id} style={{ background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,.3)', animation: 'fadeIn .3s ease', borderTop: `5px solid ${estPresquePret ? '#8B1A27' : '#FFB800'}` }}>
                 <div style={{ padding: '14px 18px 10px', background: estPresquePret ? '#FFF0EB' : '#FFF8E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ fontSize: 32, fontWeight: 800, color: '#1A1A2E' }}>Table {cmd.tables?.numero}</div>
+                    <div style={{ fontSize: 32, fontWeight: 800, color: '#3D0C11' }}>Table {cmd.tables?.numero}</div>
                     <div style={{ fontSize: 13, color: '#8A8A9A', marginTop: 2 }}>{cmd.tables?.zone || 'Salle'}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: estPresquePret ? '#FF6B35' : '#FFB800', background: estPresquePret ? '#FFF0EB' : '#FFF8E1', border: `1.5px solid ${estPresquePret ? '#FF6B35' : '#FFB800'}`, borderRadius: 8, padding: '3px 8px', marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: estPresquePret ? '#8B1A27' : '#FFB800', background: estPresquePret ? '#FFF0EB' : '#FFF8E1', border: `1.5px solid ${estPresquePret ? '#8B1A27' : '#FFB800'}`, borderRadius: 8, padding: '3px 8px', marginBottom: 4 }}>
                       {estPresquePret ? '🔔 Presque prêt' : '👨‍🍳 En préparation'}
                     </div>
                     <div style={{ fontSize: 12, color: '#8A8A9A', fontWeight: 600 }}>⏱ {getTemps(cmd.created_at)}</div>
@@ -157,8 +157,8 @@ export default function CuisinePage({ params }) {
                     <div style={{ color: '#8A8A9A', fontSize: 14 }}>Aucun article</div>
                   ) : items.map((item, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '6px 0', borderBottom: i < items.length - 1 ? '1px solid #F0F0F5' : 'none' }}>
-                      <span style={{ fontSize: 26, fontWeight: 800, color: '#FF6B35', minWidth: 32 }}>{item.quantite}x</span>
-                      <span style={{ fontSize: 22, fontWeight: 600, color: '#1A1A2E' }}>{item.nom_plat}</span>
+                      <span style={{ fontSize: 26, fontWeight: 800, color: '#8B1A27', minWidth: 32 }}>{item.quantite}x</span>
+                      <span style={{ fontSize: 22, fontWeight: 600, color: '#3D0C11' }}>{item.nom_plat}</span>
                     </div>
                   ))}
                   {items.some(i => i.note) && (
