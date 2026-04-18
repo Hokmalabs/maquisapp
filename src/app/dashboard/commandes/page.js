@@ -86,13 +86,6 @@ export default function CommandesPage() {
         event: '*', schema: 'public', table: 'commandes',
         filter: `restaurant_id=eq.${restaurant.id}`
       }, async (payload) => {
-        // Marquer la table occupée dès qu'une nouvelle commande arrive
-        if (payload.eventType === 'INSERT') {
-          const tid = payload.new?.table_id
-          if (tid) {
-            await supabase.from('tables').update({ statut: 'occupee' }).eq('id', tid)
-          }
-        }
         // Détecter une demande de paiement (mode_paiement vient d'être renseigné par le client)
         if (
           payload.eventType === 'UPDATE' &&
@@ -160,13 +153,26 @@ export default function CommandesPage() {
   }
 
   async function refreshCommandes(rid) {
-    const { data } = await supabase
+    const { data: cmds } = await supabase
       .from('commandes')
       .select('*, tables(numero, zone)')
       .eq('restaurant_id', rid)
-      .not('statut', 'in', '("cloture","annule")')
+      .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'])
       .order('created_at', { ascending: true })
-    setCommandes(data || [])
+
+    const tableIdsActifs = [...new Set((cmds || []).map(c => c.table_id).filter(Boolean))]
+
+    await supabase.from('tables').update({ statut: 'libre' })
+      .eq('restaurant_id', rid)
+      .not('id', 'in', tableIdsActifs.length > 0
+        ? `(${tableIdsActifs.join(',')})`
+        : '(00000000-0000-0000-0000-000000000000)')
+
+    if (tableIdsActifs.length > 0) {
+      await supabase.from('tables').update({ statut: 'occupee' }).in('id', tableIdsActifs)
+    }
+
+    setCommandes(cmds || [])
   }
 
   function grouperParTable(cmds) {

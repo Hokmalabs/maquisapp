@@ -67,7 +67,7 @@ export default function MenuPage({ params }) {
     setCategories(cats || []);
     if (cats?.length) setActiveCat(cats[0].id);
 
-    const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).eq('disponible', true).order('ordre');
+    const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).order('ordre');
     setPlats(pls || []);
 
     await loadCommandes(tableId);
@@ -148,12 +148,18 @@ export default function MenuPage({ params }) {
       .on('postgres_changes', {
         event: 'DELETE', schema: 'public', table: 'commande_items',
       }, (payload) => {
-        const nomPlat = payload.old?.nom_plat || 'Un article';
-        setItemSupprime(nomPlat);
+        const deletedId = payload.old?.id;
+        const deletedNom = payload.old?.nom_plat || 'Un article';
+        const deletedCmdId = payload.old?.commande_id;
         setAllItems(prev => {
+          const cmdIds = Object.keys(prev);
+          if (!cmdIds.includes(String(deletedCmdId)) && !cmdIds.includes(deletedCmdId)) {
+            return prev;
+          }
+          setItemSupprime(deletedNom);
           const next = { ...prev };
           for (const cmdId in next) {
-            next[cmdId] = next[cmdId].filter(i => i.id !== payload.old?.id);
+            next[cmdId] = (next[cmdId] || []).filter(i => i.id !== deletedId);
           }
           return next;
         });
@@ -531,7 +537,7 @@ function ModalDetailCommande({ cmd, items, onClose }) {
 
 function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
   return (
-    <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: 'pointer', transition: 'transform .15s' }} onClick={onClick}>
+    <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: plat.disponible ? 'pointer' : 'default', transition: 'transform .15s', opacity: plat.disponible ? 1 : 0.4, pointerEvents: plat.disponible ? 'auto' : 'none' }} onClick={plat.disponible ? onClick : undefined}>
       {plat.image_url
         ? <img src={plat.image_url} alt={plat.nom} style={{ width: 95, height: 95, objectFit: 'cover', flexShrink: 0 }} />
         : <div style={{ width: 95, height: 95, background: 'linear-gradient(135deg, #FFF0EB, #FFE0D5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>🍽️</div>
@@ -539,7 +545,8 @@ function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
       <div style={{ flex: 1, padding: '11px 13px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E', lineHeight: 1.3 }}>{plat.nom}</div>
-          {plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
+          {!plat.disponible && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Indisponible</div>}
+          {plat.disponible && plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: '#FF6B35' }}>{plat.prix.toLocaleString()} F</div>

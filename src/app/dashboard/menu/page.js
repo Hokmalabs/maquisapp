@@ -235,10 +235,10 @@ export default function MenuPage() {
                 <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{plat.prix.toLocaleString()} F</div>
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
                   {/* Toggle dispo */}
-                  <button onClick={() => toggleDispo(plat)}
-                    style={{ background: plat.disponible ? '#E8F5E9' : '#FFEBEE', border: 'none', borderRadius: 8, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: plat.disponible ? C.green : C.red, cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {plat.disponible ? '✓ Dispo' : '✗ Indispo'}
-                  </button>
+                  <div onClick={() => toggleDispo(plat)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: plat.disponible ? 'rgba(0,200,81,0.12)' : 'rgba(255,59,48,0.12)', color: plat.disponible ? C.green : C.red, border: `1px solid ${plat.disponible ? 'rgba(0,200,81,0.3)' : 'rgba(255,59,48,0.3)'}` }}>
+                    {plat.disponible ? '✓ Disponible' : '✗ Indisponible'}
+                  </div>
                   <button onClick={() => openPlatModal(plat)} style={{ background: C.grayLight, border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✏️</button>
                   <button onClick={() => deletePlat(plat)} style={{ background: '#FFEBEE', border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red }}>🗑️</button>
                 </div>
