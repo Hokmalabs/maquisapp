@@ -25,6 +25,8 @@ export default function CuisinePage({ params }) {
   const [commandes, setCommandes] = useState([])
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(new Date())
+  const [installPrompt, setInstallPrompt] = useState(null)
+  const [showInstallBtn, setShowInstallBtn] = useState(false)
 
   useEffect(() => {
     if (!restaurantId) return
@@ -33,6 +35,12 @@ export default function CuisinePage({ params }) {
     const tick = setInterval(() => setNow(new Date()), 30000)
     return () => clearInterval(tick)
   }, [restaurantId])
+
+  useEffect(() => {
+    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); setShowInstallBtn(true) }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
 
   // Realtime
   useEffect(() => {
@@ -91,6 +99,20 @@ export default function CuisinePage({ params }) {
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
         @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
       `}</style>
+
+      {/* BANNIÈRE INSTALL PWA */}
+      {showInstallBtn && (
+        <div style={{ marginBottom: 12, background: 'rgba(255,107,53,.15)', border: '1px solid rgba(255,107,53,.4)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#FF6B35' }}>📲 Installer sur l'écran d'accueil</span>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={async () => { if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null) } setShowInstallBtn(false) }}
+              style={{ background: '#FF6B35', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Installer
+            </button>
+            <button onClick={() => setShowInstallBtn(false)} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 8, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        </div>
+      )}
 
       {/* HEADER */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, padding: '8px 0' }}>

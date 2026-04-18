@@ -47,8 +47,16 @@ export default function DashboardPage() {
   const [activeCat, setActiveCat] = useState(null)
   const [cmdStep, setCmdStep] = useState('table') // table | menu | confirm
   const [sendingCmd, setSendingCmd] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState(null)
+  const [showInstallBtn, setShowInstallBtn] = useState(false)
 
   useEffect(() => { loadData() }, [])
+
+  useEffect(() => {
+    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); setShowInstallBtn(true) }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
 
   // Realtime commandes
   useEffect(() => {
@@ -259,6 +267,20 @@ export default function DashboardPage() {
             ⚠️ Votre essai expire dans {avertissementExpiration} jour{avertissementExpiration > 1 ? 's' : ''} — <a href="/abonnement" style={{ color: '#FF6B35', fontWeight: 700 }}>Souscrire maintenant</a>
           </span>
           <button onClick={() => setAvertissementExpiration(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#7A5C00', flexShrink: 0 }}>✕</button>
+        </div>
+      )}
+
+      {/* ── BANNIÈRE INSTALL PWA ─────────────────────────────────────── */}
+      {showInstallBtn && (
+        <div style={{ margin: '10px 16px 0', background: 'linear-gradient(135deg, #FF6B35, #E85520)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>📲 Installer MaquisApp sur votre écran d'accueil</span>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={async () => { if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null) } setShowInstallBtn(false) }}
+              style={{ background: '#fff', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#FF6B35', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Installer
+            </button>
+            <button onClick={() => setShowInstallBtn(false)} style={{ background: 'rgba(255,255,255,.25)', border: 'none', borderRadius: 8, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
         </div>
       )}
 

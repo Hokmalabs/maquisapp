@@ -346,7 +346,7 @@ export default function MenuPage({ params }) {
       `}</style>
 
       {itemSupprime && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div style={{ background: '#fff', borderRadius: 20, padding: '28px 24px', maxWidth: 320, width: '100%', textAlign: 'center' }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
             <div style={{ fontSize: 16, fontWeight: 800, color: '#1A1A2E', marginBottom: 8 }}>Article non disponible</div>

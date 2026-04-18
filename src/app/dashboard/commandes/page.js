@@ -251,7 +251,9 @@ export default function CommandesPage() {
           nouveau_statut: 'libre',
         })
       }
-      await refreshCommandes(restaurant.id)
+      await refreshCommandes(restaurant?.id)
+    } catch (err) {
+      console.error('Erreur clôture:', err)
     } finally {
       setUpdating(false)
       setSelectedGroup(null)
@@ -284,19 +286,30 @@ export default function CommandesPage() {
     await refreshCommandes(restaurant.id)
   }
 
-  function preparerEtOuvrirTicket(group, itemsSnapshot) {
-    const allItems = []
+  function preparerEtOuvrirTicket(group, itemsSnapshot, totalForce) {
+    const lignesMap = {}
     for (const cmd of group.cmds) {
       const items = itemsSnapshot[cmd.id] || []
-      allItems.push(...items)
+      for (const item of items) {
+        const key = (item.nom_plat || '') + '__' + (item.prix_unitaire || 0)
+        if (lignesMap[key]) {
+          lignesMap[key].quantite += (item.quantite || 0)
+          lignesMap[key].total += (item.prix_unitaire || 0) * (item.quantite || 0)
+        } else {
+          lignesMap[key] = {
+            nom: item.nom_plat || '',
+            quantite: item.quantite || 0,
+            prix: item.prix_unitaire || 0,
+            total: (item.prix_unitaire || 0) * (item.quantite || 0),
+          }
+        }
+      }
     }
-    // Total calculé depuis les items - jamais depuis cmd.total
-    const total = allItems.reduce(
-      (s, i) => s + ((i.prix_unitaire || 0) * (i.quantite || 0)), 0
-    )
+    const lignes = Object.values(lignesMap)
+    const total = totalForce !== undefined ? totalForce : lignes.reduce((s, l) => s + l.total, 0)
     setTicketData({
       group,
-      allItems,
+      lignes,
       total,
       modePaiement: group.cmds[group.cmds.length - 1]?.mode_paiement || '',
       restaurant,
@@ -581,15 +594,17 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
 
   async function handleCloturerEtTicket() {
     if (!modePaiement || updating) return
-    // Capturer items AVANT clôture (disparaissent du state après)
     const itemsSnapshot = {}
+    let totalReel = 0
     for (const cmd of group.cmds) {
-      itemsSnapshot[cmd.id] = [...(groupItems[cmd.id] || [])]
+      const items = groupItems[cmd.id] || []
+      itemsSnapshot[cmd.id] = [...items]
+      totalReel += items.reduce((s, i) => s + ((i.prix_unitaire || 0) * (i.quantite || 0)), 0)
     }
     const groupSnapshot = { ...group, cmds: group.cmds.map(c => ({ ...c })) }
     await onCloturerTout(group, modePaiement)
     onClose()
-    onTicket(groupSnapshot, itemsSnapshot)
+    onTicket(groupSnapshot, itemsSnapshot, totalReel)
   }
 
   return (
@@ -710,26 +725,9 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
 }
 
 function TicketCaisse({ data, onClose }) {
-  const { group, allItems, modePaiement, restaurant, date } = data
+  const { group, lignes, total: totalTicket, modePaiement, restaurant, date } = data
   const dateStr = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement)
-
-  const lignes = allItems.reduce((acc, item) => {
-    const key = (item.nom_plat || '') + '__' + (item.prix_unitaire || 0)
-    if (acc[key]) {
-      acc[key].quantite += (item.quantite || 0)
-      acc[key].total += (item.prix_unitaire || 0) * (item.quantite || 0)
-    } else {
-      acc[key] = {
-        nom: item.nom_plat || '',
-        quantite: item.quantite || 0,
-        prix: item.prix_unitaire || 0,
-        total: (item.prix_unitaire || 0) * (item.quantite || 0),
-      }
-    }
-    return acc
-  }, {})
-  const totalTicket = Object.values(lignes).reduce((s, l) => s + l.total, 0)
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }}>
@@ -753,7 +751,7 @@ function TicketCaisse({ data, onClose }) {
               {group.cmds.length > 1 && <div>{group.cmds.length} commandes groupées</div>}
               <div style={{ borderTop: '1px dashed #ccc', margin: '8px 0' }}></div>
             </div>
-            {Object.values(lignes).map((l, i) => (
+            {lignes.map((l, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                 <div>
                   <div style={{ fontWeight: 700 }}>{l.nom}</div>
