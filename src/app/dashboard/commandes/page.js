@@ -86,6 +86,13 @@ export default function CommandesPage() {
         event: '*', schema: 'public', table: 'commandes',
         filter: `restaurant_id=eq.${restaurant.id}`
       }, async (payload) => {
+        // Marquer la table occupée dès qu'une nouvelle commande arrive
+        if (payload.eventType === 'INSERT') {
+          const tid = payload.new?.table_id
+          if (tid) {
+            await supabase.from('tables').update({ statut: 'occupee' }).eq('id', tid)
+          }
+        }
         // Détecter une demande de paiement (mode_paiement vient d'être renseigné par le client)
         if (
           payload.eventType === 'UPDATE' &&
@@ -246,10 +253,7 @@ export default function CommandesPage() {
         }
       }
       if (tableId) {
-        await supabase.rpc('update_table_statut', {
-          table_id: tableId,
-          nouveau_statut: 'libre',
-        })
+        await supabase.from('tables').update({ statut: 'libre' }).eq('id', tableId)
       }
       await refreshCommandes(restaurant?.id)
     } catch (err) {

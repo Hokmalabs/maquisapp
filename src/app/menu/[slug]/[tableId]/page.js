@@ -10,14 +10,6 @@ const C = {
   shadow: 'rgba(0,0,0,0.08)', shadowMd: 'rgba(0,0,0,0.14)',
 };
 
-// ─── MANQUANT dans l'ancien fichier — causait une erreur dans RecuNumerique ──
-const MODES_PAIEMENT = [
-  { id: 'wave',         label: 'Wave',          icon: '🌊' },
-  { id: 'orange_money', label: 'Orange Money',  icon: '🟠' },
-  { id: 'mtn_money',   label: 'MTN Money',     icon: '💛' },
-  { id: 'cash',        label: 'Espèces',       icon: '💵' },
-  { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
-];
 
 const STATUT_CONFIG = {
   en_attente:     { label: 'En attente',     color: '#FFB800', icon: '⏳', bg: '#FFF8E1' },
@@ -44,8 +36,6 @@ export default function MenuPage({ params }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showPanierModal, setShowPanierModal] = useState(false);
   const [showDetailCmd, setShowDetailCmd]     = useState(null);
-  const [showRecu, setShowRecu]       = useState(false);
-  const [recuData, setRecuData]       = useState(null);
   const [appelEnvoye, setAppelEnvoye] = useState(false);
   const [demandeEnvoyee, setDemandeEnvoyee] = useState(false);
   const [sending, setSending]         = useState(false);
@@ -55,12 +45,11 @@ export default function MenuPage({ params }) {
   const catRefs    = useRef({});
   const sendingRef = useRef(false);
   const recuEnCours = useRef(false);
-  const recuAffiche = useRef(false);
 
   useEffect(() => { loadData(); }, [slug, tableId]);
 
   useEffect(() => {
-    if (sessionStorage.getItem(`table_cloturee_${tableId}`) === 'true') {
+    if (sessionStorage.getItem(`cloture_${tableId}`)) {
       setTableCloturee(true);
     }
   }, [tableId]);
@@ -96,10 +85,6 @@ export default function MenuPage({ params }) {
 
     const cmdList = cmds || [];
     setCommandes(cmdList);
-
-    if (cmdList.length > 0) {
-      await marquerTableOccupee(id);
-    }
 
     if (cmdList.length) {
       const itemsMap = {};
@@ -143,9 +128,8 @@ export default function MenuPage({ params }) {
             return prev;
           });
         } else if (s === 'cloture') {
-          if (recuEnCours.current || recuAffiche.current) return;
+          if (recuEnCours.current) return;
           setTimeout(async () => {
-            if (recuAffiche.current) return;
             const { data: remaining } = await supabase
               .from('commandes').select('id').eq('table_id', tableId)
               .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
@@ -181,26 +165,11 @@ export default function MenuPage({ params }) {
   async function afficherRecu() {
     if (recuEnCours.current) return;
     recuEnCours.current = true;
-
     try {
-      const { data: cmdsCloturees } = await supabase
-        .from('commandes').select('*').eq('table_id', tableId)
-        .eq('statut', 'cloture').order('created_at', { ascending: true });
-
-      if (!cmdsCloturees?.length) return;
-
-      const totalFinal = cmdsCloturees.reduce((s, c) => s + (c.total || 0), 0);
-
-      setRecuData({
-        restaurant,
-        total: totalFinal,
-        modePaiement: cmdsCloturees[cmdsCloturees.length - 1]?.mode_paiement || '',
-        date: new Date(),
-      });
       setCommandes([]);
       setAllItems({});
+      sessionStorage.setItem(`cloture_${tableId}`, '1');
       setTableCloturee(true);
-      setShowRecu(true);
     } finally {
       recuEnCours.current = false;
     }
@@ -230,16 +199,6 @@ export default function MenuPage({ params }) {
     return panier.find(i => i.plat_id === platId)?.quantite || 0;
   }
 
-  async function marquerTableOccupee(tid) {
-    const { error } = await supabase.rpc('update_table_statut', {
-      table_id: tid,
-      nouveau_statut: 'occupee',
-    });
-    if (error) {
-      console.error('Erreur update table statut:', error.message, error.code);
-    }
-  }
-
   async function calculerVraiTotal(cmdId) {
     const { data: items } = await supabase
       .from('commande_items')
@@ -263,7 +222,6 @@ export default function MenuPage({ params }) {
       );
       const vraiTotal = await calculerVraiTotal(cmd.id);
       await supabase.from('commandes').update({ total: vraiTotal }).eq('id', cmd.id);
-      await marquerTableOccupee(table.id);
       setPanier([]);
       setShowPanierModal(false);
       setCommandes(prev => {
@@ -313,21 +271,8 @@ export default function MenuPage({ params }) {
   if (loading) return <LoadingScreen />;
   if (!restaurant) return <ErrorScreen />;
 
-  if (tableCloturee && !showRecu) {
-    return (
-      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui", padding: 24, textAlign: 'center' }}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
-        <div style={{ fontSize: 64, marginBottom: 20 }}>🙏</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 10 }}>Merci de votre visite !</div>
-        <div style={{ fontSize: 14, color: C.gray, lineHeight: 1.6, marginBottom: 28 }}>Nous espérons vous revoir bientôt chez {restaurant.nom} !</div>
-        {recuData && (
-          <button onClick={() => setShowRecu(true)} style={{ background: C.primary, border: 'none', borderRadius: 14, padding: '13px 28px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 16 }}>
-            📄 Voir mon reçu
-          </button>
-        )}
-        <div style={{ fontSize: 13, color: C.gray, marginTop: 8 }}>Pour commander à nouveau, scannez le QR code de votre table.</div>
-      </div>
-    );
+  if (tableCloturee) {
+    return <EcranFin />;
   }
 
   return (
@@ -503,11 +448,6 @@ export default function MenuPage({ params }) {
       {showDetailCmd && (
         <ModalDetailCommande cmd={showDetailCmd} items={allItems[showDetailCmd.id] || []}
           onClose={() => setShowDetailCmd(null)} />
-      )}
-      {showRecu && recuData && (
-        <div style={{ position: 'fixed', inset: 0, background: C.bg, zIndex: 500, overflowY: 'auto', animation: 'fadeIn .3s' }}>
-          <RecuNumerique data={recuData} />
-        </div>
       )}
     </div>
   );
@@ -691,40 +631,58 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
   );
 }
 
-function RecuNumerique({ data }) {
-  const modePaie = MODES_PAIEMENT.find(m => m.id === data.modePaiement);
-  const dateStr = new Date(data.date).toLocaleDateString('fr-FR', {
-    day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-
+function EcranFin() {
   return (
-    <div style={{ minHeight: '100vh', background: '#1A1A2E', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui", padding: 24, textAlign: 'center' }}>
+    <div style={{
+      minHeight: '100vh',
+      background: '#1A1A2E',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontFamily: "'DM Sans', system-ui",
+      padding: 32,
+      textAlign: 'center'
+    }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');
-        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&display=swap');
+        @keyframes float {
+          0%,100%{transform:translateY(0)}
+          50%{transform:translateY(-10px)}
+        }
       `}</style>
-      <div style={{ fontSize: 64, marginBottom: 20, animation: 'float 3s ease-in-out infinite' }}>🙏</div>
-      <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 8 }}>Merci de votre visite !</div>
-      <div style={{ fontSize: 14, color: 'rgba(255,255,255,.6)', marginBottom: 28, lineHeight: 1.6 }}>
-        Nous espérons vous revoir bientôt chez{' '}
-        <span style={{ color: '#FF6B35', fontWeight: 700 }}>{data.restaurant?.nom}</span>
+      <div style={{
+        fontSize: 72,
+        marginBottom: 24,
+        animation: 'float 3s ease-in-out infinite'
+      }}>
+        🙏
       </div>
-      <div style={{ background: 'rgba(255,255,255,.08)', borderRadius: 16, padding: '20px 24px', marginBottom: 20, width: '100%', maxWidth: 300 }}>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 4 }}>Montant réglé</div>
-        <div style={{ fontSize: 32, fontWeight: 800, color: '#FF6B35' }}>{(data.total || 0).toLocaleString()} FCFA</div>
-        {modePaie && (
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,.5)', marginTop: 6 }}>
-            {modePaie.icon} {modePaie.label}
-          </div>
-        )}
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,.3)', marginTop: 4 }}>{dateStr}</div>
+      <div style={{
+        fontSize: 26, fontWeight: 800,
+        color: '#fff', marginBottom: 12
+      }}>
+        Merci de votre visite !
       </div>
-      <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', maxWidth: 260, lineHeight: 1.6 }}>
-        Pour commander à nouveau, scannez le QR code de votre table
+      <div style={{
+        fontSize: 15,
+        color: 'rgba(255,255,255,0.6)',
+        lineHeight: 1.7,
+        maxWidth: 280
+      }}>
+        Votre paiement a été enregistré.{'\n'}
+        Nous espérons vous revoir très bientôt !
       </div>
-      <div style={{ marginTop: 32, fontSize: 11, color: 'rgba(255,255,255,.2)' }}>Reçu généré par MaquisApp</div>
+      <div style={{
+        marginTop: 48,
+        fontSize: 12,
+        color: 'rgba(255,255,255,0.2)'
+      }}>
+        Pour commander à nouveau,{'\n'}
+        scannez le QR code de votre table
+      </div>
     </div>
-  );
+  )
 }
 
 function LoadingScreen() {
