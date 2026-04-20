@@ -89,7 +89,7 @@ export default function MenuPage({ params }) {
     if (cmdList.length) {
       const itemsMap = {};
       await Promise.all(cmdList.map(async (cmd) => {
-        const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
+        const { data } = await supabase.from('commande_items').select('*, plats(est_boisson)').eq('commande_id', cmd.id);
         itemsMap[cmd.id] = data || [];
       }));
       setAllItems(itemsMap);
@@ -120,7 +120,7 @@ export default function MenuPage({ params }) {
           });
           setAllItems(prev => {
             if (!prev[payload.new.id]) {
-              supabase.from('commande_items').select('*').eq('commande_id', payload.new.id)
+              supabase.from('commande_items').select('*, plats(est_boisson)').eq('commande_id', payload.new.id)
                 .then(({ data }) => {
                   setAllItems(p => ({ ...p, [payload.new.id]: data || [] }));
                 });
@@ -488,8 +488,20 @@ function CommandeStatusBanner({ cmd, items, index, total, onVoirDetails, onPayer
 
 function ModalDetailCommande({ cmd, items, onClose }) {
   const cfg = STATUT_CONFIG[cmd.statut] || STATUT_CONFIG.en_attente;
-  const steps = ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'];
-  const stepIdx = steps.indexOf(cmd.statut);
+  const estUniquementBoissons = items.length > 0 && items.every(i => i.plats?.est_boisson === true);
+  const parcours = estUniquementBoissons ? [
+    { key: 'en_attente', label: 'Commande reçue', icon: '📝' },
+    { key: 'servi',      label: 'Servi',           icon: '🍺' },
+  ] : [
+    { key: 'en_attente',     label: 'En attente',     icon: '⏳' },
+    { key: 'valide',         label: 'Validée',        icon: '✅' },
+    { key: 'en_preparation', label: 'En préparation', icon: '👨‍🍳' },
+    { key: 'presque_pret',   label: 'Presque prêt',   icon: '🔔' },
+    { key: 'servi',          label: 'Servi',           icon: '🍽️' },
+  ];
+  const stepIdx = estUniquementBoissons
+    ? (cmd.statut === 'servi' ? 1 : 0)
+    : parcours.findIndex(s => s.key === cmd.statut);
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
@@ -509,15 +521,22 @@ function ModalDetailCommande({ cmd, items, onClose }) {
         </div>
         <div style={{ padding: '12px 18px', borderBottom: '1px solid #F0F0F5' }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            {steps.map((s, i) => (
-              <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 1 : 'none' }}>
+            {parcours.map((s, i) => (
+              <div key={s.key} style={{ display: 'flex', alignItems: 'center', flex: i < parcours.length - 1 ? 1 : 'none' }}>
                 <div style={{ width: 22, height: 22, borderRadius: '50%', background: i <= stepIdx ? '#8B1A27' : '#F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {i <= stepIdx ? <span style={{ color: '#fff', fontSize: 11 }}>✓</span> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E8E8F0', display: 'block' }}></span>}
                 </div>
-                {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? '#8B1A27' : '#F0F0F5', margin: '0 3px' }}></div>}
+                {i < parcours.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? '#8B1A27' : '#F0F0F5', margin: '0 3px' }}></div>}
               </div>
             ))}
           </div>
+          {estUniquementBoissons && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+              {parcours.map(s => (
+                <div key={s.key} style={{ fontSize: 9, color: '#8A8A9A', textAlign: 'center', flex: 1 }}>{s.icon} {s.label}</div>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ overflowY: 'auto', flex: 1, padding: '10px 18px 24px' }}>
           {items.map(item => (
