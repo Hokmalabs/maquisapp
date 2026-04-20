@@ -75,27 +75,76 @@ export default function AdminPage() {
 
   async function activerAbonnement(resto, plan) {
     if (!confirm(`Activer le plan ${plan} pour ${resto.nom} ?`)) return
+
+    console.log('DEBUG - Activation démarrée', { resto_id: resto.id, plan })
+
     setActionLoading(true)
     const fin = new Date()
     if (plan === 'mensuel') fin.setMonth(fin.getMonth() + 1)
-    else fin.setFullYear(fin.getFullYear() + 1)
-    const { error } = await supabase.from('restaurants').update({
-      abonnement_statut: 'actif',
-      abonnement_plan: plan,
-      abonnement_fin: fin.toISOString(),
-    }).eq('id', resto.id)
-    if (error) alert('Erreur : ' + error.message)
-    else { await loadAll(); alert(`✅ Abonnement ${plan} activé pour ${resto.nom}`) }
+    else if (plan === 'annuel') fin.setFullYear(fin.getFullYear() + 1)
+
+    const finISO = fin.toISOString()
+    console.log('DEBUG - Date fin calculée:', finISO)
+
+    const { data, error } = await supabase
+      .from('restaurants')
+      .update({
+        abonnement_statut: 'actif',
+        abonnement_plan: plan,
+        abonnement_fin: finISO,
+      })
+      .eq('id', resto.id)
+      .select()
+
+    console.log('DEBUG - Résultat update:', { data, error })
+
     setActionLoading(false)
+
+    if (error) {
+      alert('❌ Erreur : ' + error.message +
+        '\n\nCode: ' + error.code +
+        '\nDétails: ' + (error.details || 'aucun'))
+      return
+    }
+
+    if (!data || data.length === 0) {
+      alert('⚠️ Aucune ligne mise à jour.\n' +
+        'Problème de permission RLS probable.\n' +
+        'L\'admin n\'a peut-être pas le droit de modifier ce restaurant.')
+      return
+    }
+
+    await loadAll()
+    alert(`✅ Abonnement ${plan} activé pour ${resto.nom}\nFin : ${fin.toLocaleDateString('fr-FR')}`)
   }
 
   async function suspendreAbonnement(resto) {
-    if (!confirm(`Suspendre le compte de ${resto.nom} ?`)) return
+    if (!confirm(`Suspendre ${resto.nom} ?`)) return
+
     setActionLoading(true)
-    const { error } = await supabase.from('restaurants').update({ abonnement_statut: 'suspendu' }).eq('id', resto.id)
-    if (error) alert('Erreur : ' + error.message)
-    else { await loadAll(); alert(`✅ Compte suspendu pour ${resto.nom}`) }
+
+    const { data, error } = await supabase
+      .from('restaurants')
+      .update({ abonnement_statut: 'suspendu' })
+      .eq('id', resto.id)
+      .select()
+
+    console.log('DEBUG - Suspension:', { data, error })
+
     setActionLoading(false)
+
+    if (error) {
+      alert('❌ Erreur : ' + error.message)
+      return
+    }
+
+    if (!data || data.length === 0) {
+      alert('⚠️ Aucune modification. RLS bloque peut-être.')
+      return
+    }
+
+    await loadAll()
+    alert(`✅ ${resto.nom} suspendu`)
   }
 
   function exporterCSV() {
