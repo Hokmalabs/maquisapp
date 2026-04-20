@@ -536,8 +536,10 @@ function ModalDetailCommande({ cmd, items, onClose }) {
 }
 
 function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
+  const estRupture = plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) <= 0
+  const estBloque = !plat.disponible || estRupture
   return (
-    <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: plat.disponible ? 'pointer' : 'default', transition: 'transform .15s', opacity: plat.disponible ? 1 : 0.4, pointerEvents: plat.disponible ? 'auto' : 'none' }} onClick={plat.disponible ? onClick : undefined}>
+    <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: estBloque ? 'default' : 'pointer', transition: 'transform .15s', opacity: estBloque ? 0.4 : 1, pointerEvents: estBloque ? 'none' : 'auto' }} onClick={estBloque ? undefined : onClick}>
       {plat.image_url
         ? <img src={plat.image_url} alt={plat.nom} style={{ width: 95, height: 95, objectFit: 'cover', flexShrink: 0 }} />
         : <div style={{ width: 95, height: 95, background: 'linear-gradient(135deg, #FFF0EB, #FFE0D5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>🍽️</div>
@@ -546,7 +548,8 @@ function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', lineHeight: 1.3 }}>{plat.nom}</div>
           {!plat.disponible && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Indisponible</div>}
-          {plat.disponible && plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
+          {plat.disponible && estRupture && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Rupture de stock</div>}
+          {plat.disponible && !estRupture && plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: '#8B1A27' }}>{plat.prix.toLocaleString()} F</div>

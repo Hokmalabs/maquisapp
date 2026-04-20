@@ -21,7 +21,7 @@ export default function MenuPage() {
   const [editingCat, setEditingCat] = useState(null)
   const [editingPlat, setEditingPlat] = useState(null)
   const [catForm, setCatForm] = useState({ nom: '' })
-  const [platForm, setPlatForm] = useState({ nom: '', description: '', prix: '', image_url: '', image_preview: '', disponible: true, categorie_id: '' })
+  const [platForm, setPlatForm] = useState({ nom: '', description: '', prix: '', image_url: '', image_preview: '', disponible: true, categorie_id: '', est_boisson: false, stock_actif: false, stock_actuel: 0, stock_alerte: 10 })
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
 
@@ -72,10 +72,10 @@ export default function MenuPage() {
   function openPlatModal(plat = null) {
     if (plat) {
       setEditingPlat(plat)
-      setPlatForm({ nom: plat.nom, description: plat.description || '', prix: plat.prix, image_url: plat.image_url || '', image_preview: '', disponible: plat.disponible, categorie_id: plat.categorie_id })
+      setPlatForm({ nom: plat.nom, description: plat.description || '', prix: plat.prix, image_url: plat.image_url || '', image_preview: '', disponible: plat.disponible, categorie_id: plat.categorie_id, est_boisson: plat.est_boisson || false, stock_actif: plat.stock_actif || false, stock_actuel: plat.stock_actuel ?? 0, stock_alerte: plat.stock_alerte ?? 10 })
     } else {
       setEditingPlat(null)
-      setPlatForm({ nom: '', description: '', prix: '', image_url: '', image_preview: '', disponible: true, categorie_id: activeCat || '' })
+      setPlatForm({ nom: '', description: '', prix: '', image_url: '', image_preview: '', disponible: true, categorie_id: activeCat || '', est_boisson: false, stock_actif: false, stock_actuel: 0, stock_alerte: 10 })
     }
     setShowPlatModal(true)
   }
@@ -83,7 +83,7 @@ export default function MenuPage() {
   async function savePlat() {
     if (!platForm.nom.trim() || !platForm.prix) return
     setSaving(true)
-    const payload = { nom: platForm.nom, description: platForm.description, prix: Number(platForm.prix), image_url: platForm.image_url, disponible: platForm.disponible, categorie_id: platForm.categorie_id || activeCat }
+    const payload = { nom: platForm.nom, description: platForm.description, prix: Number(platForm.prix), image_url: platForm.image_url, disponible: platForm.disponible, categorie_id: platForm.categorie_id || activeCat, est_boisson: platForm.est_boisson, stock_actif: platForm.stock_actif, stock_actuel: Number(platForm.stock_actuel), stock_alerte: Number(platForm.stock_alerte) }
     if (editingPlat) {
       await supabase.from('plats').update(payload).eq('id', editingPlat.id)
     } else {
@@ -228,7 +228,16 @@ export default function MenuPage() {
             }
             <div style={{ flex: 1, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{plat.nom}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{plat.nom}</div>
+                  {plat.est_boisson && plat.stock_actif && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 8, fontSize: 10, fontWeight: 700,
+                      background: (plat.stock_actuel || 0) <= 0 ? 'rgba(255,59,48,.12)' : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? 'rgba(255,184,0,.15)' : 'rgba(0,200,81,.12)',
+                      color: (plat.stock_actuel || 0) <= 0 ? C.red : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? '#7A5C00' : C.green }}>
+                      {(plat.stock_actuel || 0) <= 0 ? '⛔' : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? '⚠️' : '✓'} {plat.stock_actuel || 0}
+                    </div>
+                  )}
+                </div>
                 {plat.description && <div style={{ fontSize: 11, color: C.gray, marginTop: 2, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
@@ -329,6 +338,42 @@ export default function MenuPage() {
                   <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: platForm.disponible ? 23 : 3, transition: 'left .2s', boxShadow: '0 1px 4px rgba(0,0,0,.2)' }}></div>
                 </button>
               </div>
+              {/* Boisson */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: C.grayLight, borderRadius: 13, marginTop: 10 }}>
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>🥤 C'est une boisson</span>
+                  <div style={{ fontSize: 11, color: C.gray, marginTop: 2 }}>Active la gestion de stock</div>
+                </div>
+                <button onClick={() => setPlatForm(p => ({ ...p, est_boisson: !p.est_boisson }))}
+                  style={{ width: 44, height: 24, borderRadius: 12, background: platForm.est_boisson ? C.primary : C.border, border: 'none', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: platForm.est_boisson ? 23 : 3, transition: 'left .2s', boxShadow: '0 1px 4px rgba(0,0,0,.2)' }}></div>
+                </button>
+              </div>
+              {platForm.est_boisson && (
+                <div style={{ background: C.primaryLight, borderRadius: 13, padding: '14px', marginTop: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>Activer le suivi de stock</span>
+                    <button onClick={() => setPlatForm(p => ({ ...p, stock_actif: !p.stock_actif }))}
+                      style={{ width: 44, height: 24, borderRadius: 12, background: platForm.stock_actif ? C.green : C.border, border: 'none', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: platForm.stock_actif ? 23 : 3, transition: 'left .2s', boxShadow: '0 1px 4px rgba(0,0,0,.2)' }}></div>
+                    </button>
+                  </div>
+                  {platForm.stock_actif && (
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, color: C.gray, marginBottom: 5, fontWeight: 600 }}>Stock actuel</div>
+                        <input type="number" min="0" value={platForm.stock_actuel} onChange={e => setPlatForm(p => ({ ...p, stock_actuel: e.target.value }))}
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 14, outline: 'none', fontFamily: 'inherit', textAlign: 'center', fontWeight: 700, color: C.dark }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, color: C.gray, marginBottom: 5, fontWeight: 600 }}>Seuil alerte</div>
+                        <input type="number" min="0" value={platForm.stock_alerte} onChange={e => setPlatForm(p => ({ ...p, stock_alerte: e.target.value }))}
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 14, outline: 'none', fontFamily: 'inherit', textAlign: 'center', fontWeight: 700, color: C.dark }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}` }}>
               <button className="btn" onClick={savePlat} disabled={saving}

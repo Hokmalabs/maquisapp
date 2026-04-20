@@ -49,6 +49,7 @@ export default function DashboardPage() {
   const [sendingCmd, setSendingCmd] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showInstallBtn, setShowInstallBtn] = useState(false)
+  const [alertesStock, setAlertesStock] = useState(0)
 
   useEffect(() => { loadData() }, [])
 
@@ -139,7 +140,19 @@ export default function DashboardPage() {
       setShowOnboarding(true)
     }
 
+    await checkStock(rid)
     setLoading(false)
+  }
+
+  async function checkStock(rid) {
+    const { data } = await supabase.from('plats')
+      .select('stock_actuel, stock_alerte')
+      .eq('restaurant_id', rid)
+      .eq('est_boisson', true)
+      .eq('stock_actif', true)
+    if (!data) return
+    const count = data.filter(p => (p.stock_actuel || 0) <= (p.stock_alerte || 10)).length
+    setAlertesStock(count)
   }
 
   const refreshCommandes = async (rid) => {
@@ -267,6 +280,16 @@ export default function DashboardPage() {
             ⚠️ Votre essai expire dans {avertissementExpiration} jour{avertissementExpiration > 1 ? 's' : ''} — <a href="/abonnement" style={{ color: '#8B1A27', fontWeight: 700 }}>Souscrire maintenant</a>
           </span>
           <button onClick={() => setAvertissementExpiration(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#7A5C00', flexShrink: 0 }}>✕</button>
+        </div>
+      )}
+
+      {/* ── BANNIÈRE STOCK FAIBLE ────────────────────────────────────── */}
+      {alertesStock > 0 && (
+        <div onClick={() => router.push('/dashboard/stock')} style={{ margin: '10px 16px 0', background: '#FFF8E1', border: '1.5px solid #FFB800', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#7A5C00' }}>
+            ⚠️ {alertesStock} boisson{alertesStock > 1 ? 's' : ''} en stock faible — Gérer le stock
+          </span>
+          <span style={{ fontSize: 18, color: '#FFB800', flexShrink: 0 }}>›</span>
         </div>
       )}
 
@@ -413,12 +436,15 @@ export default function DashboardPage() {
             { icon: '🥘', label: 'Menu', desc: 'Plats & catégories', path: '/dashboard/menu', circleColor: '#00C851', shadow: 'rgba(0,200,81,.3)' },
             { icon: '🪑', label: 'Tables & QR', desc: 'Gérer les tables', path: '/dashboard/tables', circleColor: '#5B8DEF', shadow: 'rgba(91,141,239,.3)' },
             { icon: '📊', label: 'Historique', desc: 'CA & rapports', path: '/dashboard/historique', circleColor: '#9B59B6', shadow: 'rgba(155,89,182,.3)' },
-          ].map(item => (
+            { icon: '🥤', label: 'Stock boissons', desc: 'Niveaux & alertes', path: '/dashboard/stock', circleColor: '#E85520', shadow: 'rgba(232,85,32,.3)', span2: true },
+          ].map((item, i) => (
             <button key={item.path} className="card-btn" onClick={() => router.push(item.path)}
-              style={{ background: C.white, borderRadius: 18, padding: '18px 16px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', textAlign: 'left', cursor: 'pointer', border: 'none', fontFamily: 'inherit', transition: 'transform .15s' }}>
-              <div style={{ width: 52, height: 52, borderRadius: '50%', background: item.circleColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: 12, boxShadow: `0 4px 14px ${item.shadow}` }}>{item.icon}</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{item.label}</div>
-              <div style={{ fontSize: 11, color: C.gray, marginTop: 3 }}>{item.desc}</div>
+              style={{ background: C.white, borderRadius: 18, padding: '18px 16px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', textAlign: 'left', cursor: 'pointer', border: 'none', fontFamily: 'inherit', transition: 'transform .15s', gridColumn: item.span2 ? 'span 2' : 'span 1', display: 'flex', alignItems: item.span2 ? 'center' : 'block', gap: item.span2 ? 16 : 0 }}>
+              <div style={{ width: 52, height: 52, borderRadius: '50%', background: item.circleColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: item.span2 ? 0 : 12, flexShrink: 0, boxShadow: `0 4px 14px ${item.shadow}` }}>{item.icon}</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{item.label}</div>
+                <div style={{ fontSize: 11, color: C.gray, marginTop: 3 }}>{item.desc}</div>
+              </div>
             </button>
           ))}
           <button className="card-btn" onClick={() => router.push('/dashboard/parametres')}
