@@ -146,6 +146,12 @@ export default function MenuPage({ params }) {
         }
       })
       .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'plats',
+        filter: `restaurant_id=eq.${restaurant.id}`
+      }, (payload) => {
+        setPlats(prev => prev.map(p => p.id === payload.new.id ? payload.new : p))
+      })
+      .on('postgres_changes', {
         event: 'DELETE', schema: 'public', table: 'commande_items',
       }, (payload) => {
         const deletedId = payload.old?.id;
@@ -185,6 +191,19 @@ export default function MenuPage({ params }) {
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0);
 
   function ajouterAuPanier(plat) {
+    if (!plat.disponible) return
+
+    if (plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) <= 0) {
+      alert('❌ Cette boisson est actuellement en rupture de stock')
+      return
+    }
+
+    const quantiteDansPanier = panier.find(p => p.plat_id === plat.id)?.quantite || 0
+    if (plat.est_boisson && plat.stock_actif && (quantiteDansPanier + 1) > (plat.stock_actuel || 0)) {
+      alert(`❌ Stock insuffisant. Il reste seulement ${plat.stock_actuel} unité(s) disponible(s)`)
+      return
+    }
+
     setPanier(prev => {
       const ex = prev.find(i => i.plat_id === plat.id);
       if (ex) return prev.map(i => i.plat_id === plat.id ? { ...i, quantite: i.quantite + 1 } : i);
@@ -556,33 +575,46 @@ function ModalDetailCommande({ cmd, items, onClose }) {
 
 function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
   const estRupture = plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) <= 0
+  const stockBas = plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) > 0 && (plat.stock_actuel || 0) <= (plat.stock_alerte || 10)
   const estBloque = !plat.disponible || estRupture
   return (
-    <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: estBloque ? 'default' : 'pointer', transition: 'transform .15s', opacity: estBloque ? 0.4 : 1, pointerEvents: estBloque ? 'none' : 'auto' }} onClick={estBloque ? undefined : onClick}>
-      {plat.image_url
-        ? <img src={plat.image_url} alt={plat.nom} style={{ width: 95, height: 95, objectFit: 'cover', flexShrink: 0 }} />
-        : <div style={{ width: 95, height: 95, background: 'linear-gradient(135deg, #FFF0EB, #FFE0D5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>🍽️</div>
-      }
-      <div style={{ flex: 1, padding: '11px 13px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', lineHeight: 1.3 }}>{plat.nom}</div>
-          {!plat.disponible && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Indisponible</div>}
-          {plat.disponible && estRupture && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Rupture de stock</div>}
-          {plat.disponible && !estRupture && plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: '#8B1A27' }}>{plat.prix.toLocaleString()} F</div>
-          <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            {quantite > 0 && (
-              <>
-                <button onClick={onRemove} style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3D0C11' }}>−</button>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', minWidth: 14, textAlign: 'center' }}>{quantite}</span>
-              </>
-            )}
-            <button onClick={onAdd} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: '#8B1A27', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
+    <div style={{ position: 'relative' }}>
+      <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: estBloque ? 'default' : 'pointer', transition: 'transform .15s', opacity: estBloque ? 0.4 : 1, pointerEvents: estBloque ? 'none' : 'auto' }} onClick={estBloque ? undefined : onClick}>
+        {plat.image_url
+          ? <img src={plat.image_url} alt={plat.nom} style={{ width: 95, height: 95, objectFit: 'cover', flexShrink: 0 }} />
+          : <div style={{ width: 95, height: 95, background: 'linear-gradient(135deg, #FFF0EB, #FFE0D5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>🍽️</div>
+        }
+        <div style={{ flex: 1, padding: '11px 13px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', lineHeight: 1.3 }}>{plat.nom}</div>
+            {!plat.disponible && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Indisponible</div>}
+            {plat.disponible && estRupture && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Rupture de stock</div>}
+            {plat.disponible && !estRupture && plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#8B1A27' }}>{plat.prix.toLocaleString()} F</div>
+            <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              {quantite > 0 && (
+                <>
+                  <button onClick={onRemove} style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3D0C11' }}>−</button>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', minWidth: 14, textAlign: 'center' }}>{quantite}</span>
+                </>
+              )}
+              <button onClick={onAdd} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: '#8B1A27', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
+            </div>
           </div>
         </div>
       </div>
+      {estRupture && (
+        <div style={{ position: 'absolute', top: 8, right: 8, background: '#FF3B30', color: '#fff', padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700, zIndex: 2, pointerEvents: 'none' }}>
+          ❌ RUPTURE
+        </div>
+      )}
+      {stockBas && !estRupture && (
+        <div style={{ position: 'absolute', top: 8, right: 8, background: '#FFB800', color: '#fff', padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700, zIndex: 2, pointerEvents: 'none' }}>
+          ⚠️ PLUS QUE {plat.stock_actuel}
+        </div>
+      )}
     </div>
   );
 }
