@@ -254,28 +254,49 @@ export default function CommandesPage() {
   }
 
   async function cloturerTout(group, modePaiement) {
-    if (!modePaiement) return
+    if (!modePaiement) return false
+    console.log('[cloturerTout] Début — modePaiement:', modePaiement, '| cmds:', group.cmds.map(c => c.id))
     setUpdating(true)
     try {
       const tableId = group.tableId || group.table?.id || group.cmds[0]?.table_id
+      let success = true
       for (const cmd of group.cmds) {
         if (!['cloture', 'annule'].includes(cmd.statut)) {
-          const { error } = await supabase.from('commandes')
+          const { data, error } = await supabase.from('commandes')
             .update({ statut: 'cloture', mode_paiement: modePaiement, paye: true })
             .eq('id', cmd.id)
-          if (error) console.error('Erreur clôture:', error)
+            .select()
+          if (error) {
+            console.error('[cloturerTout] Erreur Supabase cmd', cmd.id, ':', error)
+            success = false
+          } else if (!data || data.length === 0) {
+            console.error('[cloturerTout] RLS bloqué (data vide) pour cmd', cmd.id)
+            success = false
+          } else {
+            console.log('[cloturerTout] ✓ Cmd clôturée:', cmd.id, '| statut:', data[0].statut, '| mode_paiement:', data[0].mode_paiement)
+          }
         }
       }
+      if (!success) {
+        alert('Erreur lors de la clôture. Vérifiez la console et réessayez.')
+        setUpdating(false)
+        return false
+      }
       if (tableId) {
-        await supabase.from('tables').update({ statut: 'libre' }).eq('id', tableId)
+        const { error: tableErr } = await supabase.from('tables').update({ statut: 'libre' }).eq('id', tableId)
+        if (tableErr) console.error('[cloturerTout] Erreur table:', tableErr)
       }
       await refreshCommandes(restaurant?.id)
-    } catch (err) {
-      console.error('Erreur clôture:', err)
-    } finally {
-      setUpdating(false)
       setSelectedGroup(null)
       setGroupItems({})
+      console.log('[cloturerTout] ✓ Clôture complète réussie')
+      return true
+    } catch (err) {
+      console.error('[cloturerTout] Exception:', err)
+      alert('Erreur inattendue lors de la clôture.')
+      return false
+    } finally {
+      setUpdating(false)
     }
   }
 
@@ -304,7 +325,7 @@ export default function CommandesPage() {
     await refreshCommandes(restaurant.id)
   }
 
-  function preparerEtOuvrirTicket(group, itemsSnapshot, totalForce) {
+  function preparerEtOuvrirTicket(group, itemsSnapshot, totalForce, modePaiementExplicite) {
     const lignesMap = {}
     for (const cmd of group.cmds) {
       const items = itemsSnapshot[cmd.id] || []
@@ -329,7 +350,7 @@ export default function CommandesPage() {
       group,
       lignes,
       total,
-      modePaiement: group.cmds[group.cmds.length - 1]?.mode_paiement || '',
+      modePaiement: modePaiementExplicite || group.cmds[group.cmds.length - 1]?.mode_paiement || '',
       restaurant,
       date: new Date(),
     })
@@ -630,10 +651,14 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
       itemsSnapshot[cmd.id] = [...items]
       totalReel += items.reduce((s, i) => s + ((i.prix_unitaire || 0) * (i.quantite || 0)), 0)
     }
-    const groupSnapshot = { ...group, cmds: group.cmds.map(c => ({ ...c })) }
-    await onCloturerTout(group, modePaiement)
+    const groupSnapshot = {
+      ...group,
+      cmds: group.cmds.map(c => ({ ...c, mode_paiement: modePaiement }))
+    }
+    const success = await onCloturerTout(group, modePaiement)
+    if (!success) return
     onClose()
-    onTicket(groupSnapshot, itemsSnapshot, totalReel)
+    onTicket(groupSnapshot, itemsSnapshot, totalReel, modePaiement)
   }
 
   return (
