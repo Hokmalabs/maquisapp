@@ -15,7 +15,7 @@ const MODES = [
   { id: 'wave',         label: 'Wave',          icon: '🌊', color: '#1BA7FF' },
   { id: 'orange_money', label: 'Orange Money',  icon: '🟠', color: '#FF6600' },
   { id: 'mtn_money',   label: 'MTN Money',     icon: '💛', color: '#FFC107' },
-  { id: 'cash',        label: 'Espèces',       icon: '💵', color: '#00C851' },
+  { id: 'especes',      label: 'Espèces',       icon: '💵', color: '#00C851' },
   { id: 'carte',       label: 'Carte',         icon: '💳', color: '#8B5CF6' },
 ];
 

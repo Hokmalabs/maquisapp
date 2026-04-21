@@ -18,7 +18,7 @@ const STATUT_CFG = {
 }
 
 const MODES_PAIEMENT = [
-  { id: 'cash',        label: 'Espèces',        icon: '💵' },
+  { id: 'especes',      label: 'Espèces',        icon: '💵' },
   { id: 'wave',         label: 'Wave',          icon: '🌊' },
   { id: 'orange_money', label: 'Orange Money',  icon: '🟠' },
   { id: 'mtn_money',   label: 'MTN Money',     icon: '💛' },
@@ -634,7 +634,7 @@ export default function CommandesPage() {
 
 function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaurant, onClose, onChangerStatut, onSupprimerItem, onAnnuler, onCloturerTout, onTicket, onAfficherBonCuisine, formatCFA, getTemps }) {
   const [showEncaisser, setShowEncaisser] = useState(false)
-  const [modePaiement, setModePaiement] = useState('cash')
+  const [modePaiement, setModePaiement] = useState('especes')
 
   const allGroupItems = Object.values(groupItems).flat()
   const totalGroupe = allGroupItems.length > 0
