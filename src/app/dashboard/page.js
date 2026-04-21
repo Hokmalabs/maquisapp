@@ -185,7 +185,17 @@ export default function DashboardPage() {
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0)
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0)
 
-  const ajouterPlat = (plat) => {
+  const ajouterPlat = async (plat) => {
+    if (plat.est_boisson && plat.stock_actif) {
+      const { data: platFresh } = await supabase
+        .from('plats').select('stock_actuel, nom').eq('id', plat.id).single()
+      const stockDispo = platFresh?.stock_actuel || 0
+      const qteActuelle = panier.find(i => i.plat_id === plat.id)?.quantite || 0
+      if (stockDispo <= 0 || (qteActuelle + 1) > stockDispo) {
+        alert(`Stock insuffisant pour "${platFresh?.nom || plat.nom}".\nStock disponible : ${stockDispo}`)
+        return
+      }
+    }
     setPanier(prev => {
       const ex = prev.find(i => i.plat_id === plat.id)
       if (ex) return prev.map(i => i.plat_id === plat.id ? { ...i, quantite: i.quantite + 1 } : i)

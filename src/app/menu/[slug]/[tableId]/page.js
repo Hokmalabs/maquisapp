@@ -194,13 +194,13 @@ export default function MenuPage({ params }) {
     if (!plat.disponible) return
 
     if (plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) <= 0) {
-      alert('❌ Cette boisson est actuellement en rupture de stock')
+      alert('Cette boisson est actuellement indisponible')
       return
     }
 
     const quantiteDansPanier = panier.find(p => p.plat_id === plat.id)?.quantite || 0
     if (plat.est_boisson && plat.stock_actif && (quantiteDansPanier + 1) > (plat.stock_actuel || 0)) {
-      alert(`❌ Stock insuffisant. Il reste seulement ${plat.stock_actuel} unité(s) disponible(s)`)
+      alert("Cette boisson n'est plus disponible en quantité suffisante")
       return
     }
 
@@ -575,7 +575,6 @@ function ModalDetailCommande({ cmd, items, onClose }) {
 
 function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
   const estRupture = plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) <= 0
-  const stockBas = plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) > 0 && (plat.stock_actuel || 0) <= (plat.stock_alerte || 10)
   const estBloque = !plat.disponible || estRupture
   return (
     <div style={{ position: 'relative' }}>
@@ -607,12 +606,7 @@ function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
       </div>
       {estRupture && (
         <div style={{ position: 'absolute', top: 8, right: 8, background: '#FF3B30', color: '#fff', padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700, zIndex: 2, pointerEvents: 'none' }}>
-          ❌ RUPTURE
-        </div>
-      )}
-      {stockBas && !estRupture && (
-        <div style={{ position: 'absolute', top: 8, right: 8, background: '#FFB800', color: '#fff', padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700, zIndex: 2, pointerEvents: 'none' }}>
-          ⚠️ PLUS QUE {plat.stock_actuel}
+          Indisponible
         </div>
       )}
     </div>
