@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 
 const C = {
@@ -43,17 +43,15 @@ export default function MenuPage({ params }) {
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
   const [itemSupprime, setItemSupprime] = useState(null);
-  const catRefs    = useRef({});
-  const sendingRef = useRef(false);
-  const recuEnCours = useRef(false);
+  const catRefs         = useRef({});
+  const sendingRef      = useRef(false);
+  const recuEnCoursRef  = useRef(false);
+  const recuAfficheRef  = useRef(false);
+  const tableClotureeRef = useRef(false);
+
+  useEffect(() => { tableClotureeRef.current = tableCloturee; }, [tableCloturee]);
 
   useEffect(() => { loadData(); }, [slug, tableId]);
-
-  useEffect(() => {
-    if (sessionStorage.getItem(`cloture_${tableId}`)) {
-      setTableCloturee(true);
-    }
-  }, [tableId]);
 
   async function loadData() {
     setLoading(true);
@@ -99,53 +97,74 @@ export default function MenuPage({ params }) {
     }
   }
 
-  useEffect(() => {
-    if (!tableId || !restaurant) return;
+  const afficherRecu = useCallback(async () => {
+    if (recuEnCoursRef.current) return;
+    if (recuAfficheRef.current) return;
+    if (tableClotureeRef.current) return;
+    recuEnCoursRef.current = true;
+    try {
+      setTableCloturee(true);
+      tableClotureeRef.current = true;
+      recuAfficheRef.current = true;
+      sessionStorage.setItem(`cloture_${tableId}`, '1');
+      setCommandes([]);
+      setAllItems({});
+    } finally {
+      recuEnCoursRef.current = false;
+    }
+  }, [tableId]);
 
-    const channelName = `menu-table-${tableId}-${Date.now()}`;
+  useEffect(() => {
+    if (!tableId) return;
+
+    // Vérifier sessionStorage au démarrage
+    if (sessionStorage.getItem(`cloture_${tableId}`)) {
+      setTableCloturee(true);
+      tableClotureeRef.current = true;
+      return;
+    }
 
     const channel = supabase
-      .channel(channelName)
+      .channel(`table-client-${tableId}`)
 
-      // UPDATE commandes : mise à jour du statut
+      // UPDATE commandes — le plus important pour l'affichage statut
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'commandes',
         filter: `table_id=eq.${tableId}`
       }, async (payload) => {
         if (!payload.new) return;
         const s = payload.new.statut;
-        console.log('[Realtime] UPDATE commande:', payload.new.id, '→', s);
+        console.log('[RT] commande update:', payload.new.id, '→', s);
 
         if (['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'].includes(s)) {
-          setCommandes(prev => prev.map(c =>
-            c.id === payload.new.id ? { ...c, ...payload.new } : c
+          setCommandes(prev => prev.map(cmd =>
+            cmd.id === payload.new.id ? { ...cmd, ...payload.new } : cmd
           ));
         } else if (s === 'cloture') {
-          if (recuEnCours.current) return;
-          setTimeout(async () => {
-            const { data: remaining } = await supabase
-              .from('commandes').select('id').eq('table_id', tableId)
-              .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']);
-            if (!remaining?.length) {
-              await afficherRecu();
-            } else {
-              setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
-              setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
-            }
-          }, 1500);
+          // Attendre que d'autres updates arrivent éventuellement
+          await new Promise(r => setTimeout(r, 1000));
+          if (recuAfficheRef.current) return;
+          // Recharger depuis la base pour être sûr
+          const { data: cmdsActives } = await supabase
+            .from('commandes').select('id, statut').eq('table_id', tableId)
+            .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']);
+          console.log('[RT] Commandes encore actives:', cmdsActives?.length);
+          if (!cmdsActives?.length) {
+            await afficherRecu();
+          }
         } else if (s === 'annule') {
           setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
           setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
         }
       })
 
-      // INSERT commandes : nouvelle commande sur la table
+      // INSERT nouvelle commande
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'commandes',
         filter: `table_id=eq.${tableId}`
       }, (payload) => {
         if (!payload.new) return;
-        console.log('[Realtime] INSERT commande:', payload.new.id);
+        console.log('[RT] nouvelle commande:', payload.new.id);
         if (payload.new.statut !== 'cloture') {
           setCommandes(prev => {
             if (prev.find(c => c.id === payload.new.id)) return prev;
@@ -156,86 +175,37 @@ export default function MenuPage({ params }) {
         }
       })
 
-      // UPDATE commande_items : modification d'un article
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'commande_items'
-      }, (payload) => {
-        if (!payload.new) return;
-        const cmdId = payload.new.commande_id;
-        setAllItems(prev => {
-          if (!prev[cmdId]) return prev;
-          return {
-            ...prev,
-            [cmdId]: prev[cmdId].map(item =>
-              item.id === payload.new.id ? { ...item, ...payload.new } : item
-            )
-          };
-        });
-      })
-
-      // DELETE commande_items : article retiré par le gérant
+      // DELETE commande_items — article retiré par le gérant
       .on('postgres_changes', {
         event: 'DELETE', schema: 'public', table: 'commande_items'
       }, (payload) => {
-        const deletedId = payload.old?.id;
-        const deletedNom = payload.old?.nom_plat || 'Un article';
-        const deletedCmdId = payload.old?.commande_id;
+        if (!payload.old) return;
+        const nom = payload.old.nom_plat || 'Un article';
         setAllItems(prev => {
-          const cmdIds = Object.keys(prev);
-          if (!cmdIds.includes(String(deletedCmdId)) && !cmdIds.includes(deletedCmdId)) return prev;
-          setItemSupprime(deletedNom);
           const next = { ...prev };
           for (const cmdId in next) {
-            next[cmdId] = (next[cmdId] || []).filter(i => i.id !== deletedId);
+            next[cmdId] = (next[cmdId] || []).filter(i => i.id !== payload.old.id);
           }
           return next;
         });
+        setItemSupprime(nom);
       })
 
-      // UPDATE plats : stock et disponibilité
+      // UPDATE plats — stock et disponibilité
       .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'plats',
-        filter: `restaurant_id=eq.${restaurant.id}`
+        event: 'UPDATE', schema: 'public', table: 'plats'
       }, (payload) => {
         if (!payload.new) return;
         setPlats(prev => prev.map(p => p.id === payload.new.id ? payload.new : p));
       })
 
       .subscribe((status) => {
-        console.log('[Realtime] Status:', status);
-        if (status === 'SUBSCRIBED') {
-          setRealtimeConnecte(true);
-          console.log('[Realtime] Connecté avec succès');
-        }
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          setRealtimeConnecte(false);
-          console.error('[Realtime] Erreur/déconnexion:', status);
-          // Reconnexion automatique après 3 secondes
-          setTimeout(() => {
-            console.log('[Realtime] Tentative de reconnexion...');
-            supabase.removeChannel(channel);
-          }, 3000);
-        }
+        console.log('[RT] Status:', status);
+        setRealtimeConnecte(status === 'SUBSCRIBED');
       });
 
-    return () => {
-      console.log('[Realtime] Cleanup channel');
-      supabase.removeChannel(channel);
-    };
-  }, [tableId, restaurant?.id]);
-
-  async function afficherRecu() {
-    if (recuEnCours.current) return;
-    recuEnCours.current = true;
-    try {
-      setCommandes([]);
-      setAllItems({});
-      sessionStorage.setItem(`cloture_${tableId}`, '1');
-      setTableCloturee(true);
-    } finally {
-      recuEnCours.current = false;
-    }
-  }
+    return () => { supabase.removeChannel(channel); };
+  }, [tableId, afficherRecu]);
 
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0);
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0);
@@ -525,9 +495,9 @@ export default function MenuPage({ params }) {
           onClose={() => setShowDetailCmd(null)} />
       )}
 
-      {!realtimeConnecte && (
-        <div style={{ position: 'fixed', bottom: 8, left: '50%', transform: 'translateX(-50%)', background: '#FFB800', color: '#1A0A0F', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, zIndex: 100, pointerEvents: 'none' }}>
-          Reconnexion en cours...
+      {!realtimeConnecte && !tableCloturee && (
+        <div style={{ position: 'fixed', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: '#FFB800', color: '#1A0A0F', padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700, zIndex: 100, pointerEvents: 'none', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+          Reconnexion...
         </div>
       )}
     </div>
