@@ -38,6 +38,7 @@ export default function MenuPage({ params }) {
   const [showDetailCmd, setShowDetailCmd]     = useState(null);
   const [appelEnvoye, setAppelEnvoye] = useState(false);
   const [demandeEnvoyee, setDemandeEnvoyee] = useState(false);
+  const [realtimeConnecte, setRealtimeConnecte] = useState(false);
   const [sending, setSending]         = useState(false);
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
@@ -99,40 +100,32 @@ export default function MenuPage({ params }) {
   }
 
   useEffect(() => {
-    if (!restaurant) return;
-    const ch = supabase.channel(`menu-${tableId}`)
+    if (!tableId || !restaurant) return;
+
+    const channelName = `menu-table-${tableId}-${Date.now()}`;
+
+    const channel = supabase
+      .channel(channelName)
+
+      // UPDATE commandes : mise à jour du statut
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'commandes',
+        event: 'UPDATE', schema: 'public', table: 'commandes',
         filter: `table_id=eq.${tableId}`
       }, async (payload) => {
-        const s = payload.new?.statut;
+        if (!payload.new) return;
+        const s = payload.new.statut;
+        console.log('[Realtime] UPDATE commande:', payload.new.id, '→', s);
 
-        if (['en_attente','valide','en_preparation','presque_pret','servi'].includes(s)) {
-          setCommandes(prev => {
-            const exists = prev.find(c => c.id === payload.new.id);
-            if (exists) {
-              return prev.map(c => c.id === payload.new.id ? { ...payload.new } : c);
-            }
-            if (!sendingRef.current) {
-              return [...prev, payload.new];
-            }
-            return prev;
-          });
-          setAllItems(prev => {
-            if (!prev[payload.new.id]) {
-              supabase.from('commande_items').select('*, plats(est_boisson)').eq('commande_id', payload.new.id)
-                .then(({ data }) => {
-                  setAllItems(p => ({ ...p, [payload.new.id]: data || [] }));
-                });
-            }
-            return prev;
-          });
+        if (['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'].includes(s)) {
+          setCommandes(prev => prev.map(c =>
+            c.id === payload.new.id ? { ...c, ...payload.new } : c
+          ));
         } else if (s === 'cloture') {
           if (recuEnCours.current) return;
           setTimeout(async () => {
             const { data: remaining } = await supabase
               .from('commandes').select('id').eq('table_id', tableId)
-              .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
+              .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']);
             if (!remaining?.length) {
               await afficherRecu();
             } else {
@@ -145,23 +138,51 @@ export default function MenuPage({ params }) {
           setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
         }
       })
+
+      // INSERT commandes : nouvelle commande sur la table
       .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'plats',
-        filter: `restaurant_id=eq.${restaurant.id}`
+        event: 'INSERT', schema: 'public', table: 'commandes',
+        filter: `table_id=eq.${tableId}`
       }, (payload) => {
-        setPlats(prev => prev.map(p => p.id === payload.new.id ? payload.new : p))
+        if (!payload.new) return;
+        console.log('[Realtime] INSERT commande:', payload.new.id);
+        if (payload.new.statut !== 'cloture') {
+          setCommandes(prev => {
+            if (prev.find(c => c.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
+          supabase.from('commande_items').select('*, plats(est_boisson)').eq('commande_id', payload.new.id)
+            .then(({ data }) => setAllItems(p => ({ ...p, [payload.new.id]: data || [] })));
+        }
       })
+
+      // UPDATE commande_items : modification d'un article
       .on('postgres_changes', {
-        event: 'DELETE', schema: 'public', table: 'commande_items',
+        event: 'UPDATE', schema: 'public', table: 'commande_items'
+      }, (payload) => {
+        if (!payload.new) return;
+        const cmdId = payload.new.commande_id;
+        setAllItems(prev => {
+          if (!prev[cmdId]) return prev;
+          return {
+            ...prev,
+            [cmdId]: prev[cmdId].map(item =>
+              item.id === payload.new.id ? { ...item, ...payload.new } : item
+            )
+          };
+        });
+      })
+
+      // DELETE commande_items : article retiré par le gérant
+      .on('postgres_changes', {
+        event: 'DELETE', schema: 'public', table: 'commande_items'
       }, (payload) => {
         const deletedId = payload.old?.id;
         const deletedNom = payload.old?.nom_plat || 'Un article';
         const deletedCmdId = payload.old?.commande_id;
         setAllItems(prev => {
           const cmdIds = Object.keys(prev);
-          if (!cmdIds.includes(String(deletedCmdId)) && !cmdIds.includes(deletedCmdId)) {
-            return prev;
-          }
+          if (!cmdIds.includes(String(deletedCmdId)) && !cmdIds.includes(deletedCmdId)) return prev;
           setItemSupprime(deletedNom);
           const next = { ...prev };
           for (const cmdId in next) {
@@ -170,9 +191,38 @@ export default function MenuPage({ params }) {
           return next;
         });
       })
-      .subscribe();
-    return () => supabase.removeChannel(ch);
-  }, [restaurant, tableId]);
+
+      // UPDATE plats : stock et disponibilité
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'plats',
+        filter: `restaurant_id=eq.${restaurant.id}`
+      }, (payload) => {
+        if (!payload.new) return;
+        setPlats(prev => prev.map(p => p.id === payload.new.id ? payload.new : p));
+      })
+
+      .subscribe((status) => {
+        console.log('[Realtime] Status:', status);
+        if (status === 'SUBSCRIBED') {
+          setRealtimeConnecte(true);
+          console.log('[Realtime] Connecté avec succès');
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setRealtimeConnecte(false);
+          console.error('[Realtime] Erreur/déconnexion:', status);
+          // Reconnexion automatique après 3 secondes
+          setTimeout(() => {
+            console.log('[Realtime] Tentative de reconnexion...');
+            supabase.removeChannel(channel);
+          }, 3000);
+        }
+      });
+
+    return () => {
+      console.log('[Realtime] Cleanup channel');
+      supabase.removeChannel(channel);
+    };
+  }, [tableId, restaurant?.id]);
 
   async function afficherRecu() {
     if (recuEnCours.current) return;
@@ -473,6 +523,12 @@ export default function MenuPage({ params }) {
       {showDetailCmd && (
         <ModalDetailCommande cmd={showDetailCmd} items={allItems[showDetailCmd.id] || []}
           onClose={() => setShowDetailCmd(null)} />
+      )}
+
+      {!realtimeConnecte && (
+        <div style={{ position: 'fixed', bottom: 8, left: '50%', transform: 'translateX(-50%)', background: '#FFB800', color: '#1A0A0F', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, zIndex: 100, pointerEvents: 'none' }}>
+          Reconnexion en cours...
+        </div>
       )}
     </div>
   );
