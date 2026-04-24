@@ -25,10 +25,6 @@ const MODES_PAIEMENT = [
   { id: 'carte',       label: 'Carte bancaire', icon: '💳' },
 ]
 
-function estCommandeBoissonsUniquement(items) {
-  if (!items || items.length === 0) return false
-  return items.every(item => item.plats?.est_boisson === true)
-}
 
 function jouerSon(type) {
   try {
@@ -481,9 +477,6 @@ export default function CommandesPage() {
           const totalGroupe = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
           const plusAncienne = group.cmds[0]?.created_at
           const toutesServies = group.cmds.every(c => c.statut === 'servi')
-          const itemsGroupe = group.cmds.flatMap(c => groupItems[c.id] || [])
-          const groupeEstBoissons = itemsGroupe.length > 0 && estCommandeBoissonsUniquement(itemsGroupe)
-
           return (
             <div key={gi} className="cmd-card" style={{ background: C.white, borderRadius: 16, boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 12, overflow: 'hidden', transition: 'transform .15s', borderLeft: `4px solid ${cfg.color}` }}>
               <div style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => ouvrirGroupe(group)}>
@@ -526,16 +519,8 @@ export default function CommandesPage() {
                         💳 Encaisser
                       </button>
                     )}
-                    {!toutesServies && (
-                      statut === 'en_attente' && groupeEstBoissons ? (
-                        <button className="btn" onClick={e => {
-                          e.stopPropagation()
-                          group.cmds.filter(c => c.statut === 'en_attente').forEach(c => changerStatut(c, 'servi'))
-                        }}
-                          style={{ background: C.green, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-                          🍺 Servir directement
-                        </button>
-                      ) : cfg.next ? (
+                    {!toutesServies && cfg.next && (
+                      <div style={{ display: 'flex', gap: 5 }}>
                         <button className="btn" onClick={e => {
                           e.stopPropagation()
                           group.cmds.filter(c => c.statut === statut).forEach(c => changerStatut(c, cfg.next))
@@ -543,7 +528,16 @@ export default function CommandesPage() {
                           style={{ background: cfg.color, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
                           {cfg.nextLabel} →
                         </button>
-                      ) : null
+                        {(statut === 'en_attente' || statut === 'valide') && (
+                          <button className="btn" onClick={e => {
+                            e.stopPropagation()
+                            group.cmds.filter(c => ['en_attente', 'valide'].includes(c.statut)).forEach(c => changerStatut(c, 'servi'))
+                          }}
+                            style={{ background: C.green, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            ⚡ Direct
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -704,19 +698,23 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
                   </div>
                   <div style={{ display: 'flex', gap: 5 }}>
                     {(() => {
-                      const itemsCmd = groupItems[cmd.id] || []
-                      const estBoissons = estCommandeBoissonsUniquement(itemsCmd)
-                      if (cmd.statut === 'en_attente' && estBoissons) return (
-                        <button onClick={() => onChangerStatut(cmd, 'servi')} disabled={updating}
-                          style={{ background: C.green, border: 'none', borderRadius: 7, padding: '5px 10px', fontSize: 10, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
-                          🍺 Servir directement
+                      const btnS = (bg) => ({ background: bg, border: 'none', borderRadius: 7, padding: '5px 10px', fontSize: 10, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: updating ? .7 : 1 })
+                      const directBtn = (
+                        <button onClick={() => onChangerStatut(cmd, 'servi')} disabled={updating} style={btnS(C.green)}>
+                          ⚡ Direct
                         </button>
                       )
-                      if (cmd.statut === 'valide' && estBoissons) return (
-                        <button onClick={() => onChangerStatut(cmd, 'servi')} disabled={updating}
-                          style={{ background: C.green, border: 'none', borderRadius: 7, padding: '5px 10px', fontSize: 10, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
-                          🍺 Servir maintenant
-                        </button>
+                      if (cmd.statut === 'en_attente') return (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => onChangerStatut(cmd, 'valide')} disabled={updating} style={btnS(cfg.color)}>Valider</button>
+                          {directBtn}
+                        </div>
+                      )
+                      if (cmd.statut === 'valide') return (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => onAfficherBonCuisine(cmd, groupItems[cmd.id] || [])} disabled={updating} style={btnS(cfg.color)}>Préparer</button>
+                          {directBtn}
+                        </div>
                       )
                       if (cfg?.next) return (
                         <button
@@ -724,7 +722,7 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
                             ? onAfficherBonCuisine(cmd, groupItems[cmd.id] || [])
                             : onChangerStatut(cmd, cfg.next)}
                           disabled={updating}
-                          style={{ background: cfg.color, border: 'none', borderRadius: 7, padding: '5px 10px', fontSize: 10, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
+                          style={btnS(cfg.color)}>
                           {cfg.nextLabel}
                         </button>
                       )
