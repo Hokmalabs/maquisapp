@@ -55,6 +55,16 @@ export default function MenuPage({ params }) {
 
   async function loadData() {
     setLoading(true);
+
+    // Vérification sessionStorage en premier
+    if (sessionStorage.getItem(`cloture_${tableId}`)) {
+      setTableCloturee(true);
+      tableClotureeRef.current = true;
+      recuAfficheRef.current = true;
+      setLoading(false);
+      return;
+    }
+
     const { data: resto } = await supabase.from('restaurants').select('*').eq('slug', slug).single();
     if (!resto) { setLoading(false); return; }
     setRestaurant(resto);
@@ -68,6 +78,29 @@ export default function MenuPage({ params }) {
 
     const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).order('ordre');
     setPlats(pls || []);
+
+    // Vérifier en base si la table est clôturée depuis moins de 2h
+    const [{ data: cmdsActives }, { data: cmdsTotal }] = await Promise.all([
+      supabase.from('commandes').select('id').eq('table_id', tableId).not('statut', 'in', '(cloture,annule)'),
+      supabase.from('commandes').select('id').eq('table_id', tableId).order('created_at', { ascending: false }).limit(1),
+    ]);
+    if (cmdsTotal?.length && !cmdsActives?.length) {
+      const { data: recente } = await supabase
+        .from('commandes').select('updated_at')
+        .eq('table_id', tableId).eq('statut', 'cloture')
+        .order('updated_at', { ascending: false }).limit(1);
+      if (recente?.length) {
+        const diff = Date.now() - new Date(recente[0].updated_at).getTime();
+        if (diff < 2 * 60 * 60 * 1000) {
+          setTableCloturee(true);
+          tableClotureeRef.current = true;
+          recuAfficheRef.current = true;
+          sessionStorage.setItem(`cloture_${tableId}`, '1');
+          setLoading(false);
+          return;
+        }
+      }
+    }
 
     await loadCommandes(tableId);
     setLoading(false);
@@ -98,17 +131,29 @@ export default function MenuPage({ params }) {
   }
 
   const afficherRecu = useCallback(async () => {
+    console.log('[afficherRecu] Appelé', {
+      enCours: recuEnCoursRef.current,
+      dejaAffiche: recuAfficheRef.current,
+      cloturee: tableClotureeRef.current,
+    });
     if (recuEnCoursRef.current) return;
     if (recuAfficheRef.current) return;
-    if (tableClotureeRef.current) return;
     recuEnCoursRef.current = true;
     try {
-      setTableCloturee(true);
-      tableClotureeRef.current = true;
       recuAfficheRef.current = true;
+      tableClotureeRef.current = true;
       sessionStorage.setItem(`cloture_${tableId}`, '1');
       setCommandes([]);
       setAllItems({});
+      // setTimeout garantit le re-render sur iPhone/Safari
+      setTimeout(() => { setTableCloturee(true); }, 100);
+      console.log('[afficherRecu] Écran fin activé');
+    } catch (err) {
+      console.error('[afficherRecu] Erreur:', err);
+      setTableCloturee(true);
+      recuAfficheRef.current = true;
+      tableClotureeRef.current = true;
+      sessionStorage.setItem(`cloture_${tableId}`, '1');
     } finally {
       recuEnCoursRef.current = false;
     }
@@ -127,34 +172,35 @@ export default function MenuPage({ params }) {
     const channel = supabase
       .channel(`table-client-${tableId}`)
 
-      // UPDATE commandes — le plus important pour l'affichage statut
+      // UPDATE commandes — TOUJOURS mettre à jour le state
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'commandes',
         filter: `table_id=eq.${tableId}`
       }, async (payload) => {
         if (!payload.new) return;
-        const s = payload.new.statut;
-        console.log('[RT] commande update:', payload.new.id, '→', s);
+        const nouveauStatut = payload.new.statut;
+        console.log('[RT] UPDATE commande:', payload.new.id, payload.old?.statut, '→', nouveauStatut);
 
-        if (['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'].includes(s)) {
-          setCommandes(prev => prev.map(cmd =>
+        // Mettre à jour le statut pour TOUS les cas
+        setCommandes(prev => {
+          const updated = prev.map(cmd =>
             cmd.id === payload.new.id ? { ...cmd, ...payload.new } : cmd
-          ));
-        } else if (s === 'cloture') {
-          // Attendre que d'autres updates arrivent éventuellement
+          );
+          console.log('[RT] State commandes:', updated.map(c => c.statut));
+          return updated;
+        });
+
+        // Traitement spécial clôture
+        if (nouveauStatut === 'cloture') {
           await new Promise(r => setTimeout(r, 1000));
           if (recuAfficheRef.current) return;
-          // Recharger depuis la base pour être sûr
           const { data: cmdsActives } = await supabase
             .from('commandes').select('id, statut').eq('table_id', tableId)
             .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']);
-          console.log('[RT] Commandes encore actives:', cmdsActives?.length);
+          console.log('[RT] Actives restantes:', cmdsActives?.length);
           if (!cmdsActives?.length) {
             await afficherRecu();
           }
-        } else if (s === 'annule') {
-          setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
-          setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
         }
       })
 
@@ -715,15 +761,19 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
 function EcranFin() {
   return (
     <div style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
       minHeight: '100vh',
-      background: '#3D0C11',
+      minHeight: '-webkit-fill-available',
+      background: '#1A0A0F',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       fontFamily: "'DM Sans', system-ui",
       padding: 32,
-      textAlign: 'center'
+      textAlign: 'center',
+      zIndex: 9999,
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&display=swap');
@@ -732,34 +782,16 @@ function EcranFin() {
           50%{transform:translateY(-10px)}
         }
       `}</style>
-      <div style={{
-        fontSize: 72,
-        marginBottom: 24,
-        animation: 'float 3s ease-in-out infinite'
-      }}>
-        🙏
-      </div>
-      <div style={{
-        fontSize: 26, fontWeight: 800,
-        color: '#fff', marginBottom: 12
-      }}>
+      <div style={{ fontSize: 72, marginBottom: 24, animation: 'float 3s ease-in-out infinite' }}>🙏</div>
+      <div style={{ fontSize: 26, fontWeight: 800, color: '#fff', marginBottom: 12 }}>
         Merci de votre visite !
       </div>
-      <div style={{
-        fontSize: 15,
-        color: 'rgba(255,255,255,0.6)',
-        lineHeight: 1.7,
-        maxWidth: 280
-      }}>
-        Votre paiement a été enregistré.{'\n'}
-        Nous espérons vous revoir très bientôt !
+      <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7, maxWidth: 280 }}>
+        Votre paiement a bien ete enregistre.
+        Nous esperons vous revoir tres bientot !
       </div>
-      <div style={{
-        marginTop: 48,
-        fontSize: 12,
-        color: 'rgba(255,255,255,0.2)'
-      }}>
-        Pour commander à nouveau,{'\n'}
+      <div style={{ marginTop: 48, fontSize: 12, color: 'rgba(255,255,255,0.25)', lineHeight: 1.6 }}>
+        Pour commander a nouveau,{'\n'}
         scannez le QR code de votre table
       </div>
     </div>

@@ -91,14 +91,49 @@ export default function TablesPage() {
     setTables(prev => prev.map(t => t.id === table.id ? { ...t, actif: !t.actif } : t))
   }
 
-  function downloadQR(table) {
-    const url = table.qr_code_url || `${APP_URL}/menu/${restaurant.slug}/${table.id}`
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(url)}`
-    const a = document.createElement('a')
-    a.href = qrUrl
-    a.download = `table-${table.numero}-qr.png`
-    a.target = '_blank'
-    a.click()
+  async function telechargerQR(table) {
+    try {
+      const url = table.qr_code_url || `${APP_URL}/menu/${restaurant.slug}/${table.id}`
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`
+
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve
+        img.onerror = reject
+        img.src = qrUrl
+      })
+
+      const QR_SIZE = 300
+      const TEXT_HEIGHT = 60
+      canvas.width = QR_SIZE
+      canvas.height = QR_SIZE + TEXT_HEIGHT
+
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, QR_SIZE, QR_SIZE)
+
+      ctx.fillStyle = '#8B1A27'
+      ctx.font = 'bold 22px Arial'
+      ctx.textAlign = 'center'
+      ctx.fillText(`Scannez - Table ${table.numero}`, QR_SIZE / 2, QR_SIZE + 22)
+
+      ctx.fillStyle = '#8A8A9A'
+      ctx.font = '14px Arial'
+      ctx.fillText('Scanner pour commander', QR_SIZE / 2, QR_SIZE + 44)
+
+      const link = document.createElement('a')
+      link.download = `qr-table-${table.numero}.png`
+      link.href = canvas.toDataURL('image/png')
+      link.click()
+    } catch (err) {
+      console.error('Erreur téléchargement QR:', err)
+      const fallback = table.qr_code_url || `${APP_URL}/menu/${restaurant.slug}/${table.id}`
+      window.open(`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(fallback)}`, '_blank')
+    }
   }
 
   const zones = [...new Set(tables.map(t => t.zone).filter(Boolean))]
@@ -203,15 +238,15 @@ export default function TablesPage() {
                 />
               )}
               {/* Actions */}
+              <button onClick={() => telechargerQR(table)}
+                style={{ width: '100%', background: C.primary, border: 'none', borderRadius: 10, padding: '10px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                ⬇️ Télécharger QR Table {table.numero}
+              </button>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => downloadQR(table)}
-                  style={{ flex: 1, background: C.primaryLight, border: 'none', borderRadius: 9, padding: '7px', fontSize: 10, fontWeight: 700, color: C.primary, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  ⬇️ QR
-                </button>
                 <button onClick={() => openModal(table)}
-                  style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✏️</button>
+                  style={{ flex: 1, background: C.grayLight, border: 'none', borderRadius: 9, padding: '7px', fontSize: 10, fontWeight: 700, color: C.dark, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>✏️ Modifier</button>
                 <button onClick={() => deleteTable(table)}
-                  style={{ background: '#FFEBEE', border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red }}>🗑️</button>
+                  style={{ background: '#FFEBEE', border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red, flexShrink: 0 }}>🗑️</button>
               </div>
             </div>
           )
