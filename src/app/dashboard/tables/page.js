@@ -21,6 +21,7 @@ export default function TablesPage() {
   const [form, setForm] = useState({ numero: '', capacite: '', zone: '', actif: true })
   const [saving, setSaving] = useState(false)
   const [filterZone, setFilterZone] = useState('all')
+  const [qrZoom, setQrZoom] = useState(null)
   const qrRefs = useRef({})
 
   useEffect(() => { loadData() }, [])
@@ -229,12 +230,13 @@ export default function TablesPage() {
                   {isOccupee ? 'Occupée' : isInactif ? 'Inactive' : 'Libre'}
                 </div>
               </div>
-              {/* QR Code miniature */}
+              {/* QR Code miniature — cliquable pour zoom */}
               {table.qr_code_url && (
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(table.qr_code_url)}`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(table.qr_code_url)}`}
                   alt="QR"
-                  style={{ width: '100%', height: 80, objectFit: 'contain', borderRadius: 8, background: C.grayLight, marginBottom: 10 }}
+                  onClick={() => setQrZoom({ url: `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(table.qr_code_url)}`, numero: table.numero })}
+                  style={{ width: '100%', height: 80, objectFit: 'contain', borderRadius: 8, background: C.grayLight, marginBottom: 10, cursor: 'zoom-in' }}
                 />
               )}
               {/* Actions */}
@@ -304,6 +306,27 @@ export default function TablesPage() {
             <button className="btn" onClick={saveTable} disabled={saving}
               style={{ width: '100%', background: C.primary, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? .7 : 1 }}>
               {saving ? 'Enregistrement...' : editingTable ? 'Modifier la table' : 'Créer la table'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL QR ZOOM */}
+      {qrZoom && (
+        <div onClick={() => setQrZoom(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'pointer', padding: 24 }}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: 24, textAlign: 'center', maxWidth: 340, width: '100%' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: C.primary, marginBottom: 16 }}>
+              Table {qrZoom.numero}
+            </div>
+            <img src={qrZoom.url} alt="QR Code" style={{ width: '100%', borderRadius: 12 }} />
+            <div style={{ fontSize: 13, color: C.gray, marginTop: 12 }}>
+              Scannez avec votre appareil photo
+            </div>
+            <button onClick={() => setQrZoom(null)}
+              style={{ marginTop: 16, width: '100%', background: C.primary, border: 'none', borderRadius: 12, padding: '12px', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Fermer
             </button>
           </div>
         </div>

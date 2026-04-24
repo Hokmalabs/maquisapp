@@ -48,62 +48,71 @@ export default function MenuPage({ params }) {
   const recuEnCoursRef  = useRef(false);
   const recuAfficheRef  = useRef(false);
   const tableClotureeRef = useRef(false);
+  const commandesRef    = useRef([]);
 
   useEffect(() => { tableClotureeRef.current = tableCloturee; }, [tableCloturee]);
+  useEffect(() => { commandesRef.current = commandes; }, [commandes]);
 
   useEffect(() => { loadData(); }, [slug, tableId]);
 
   async function loadData() {
+    // Ne pas recharger si déjà clôturée
+    if (tableClotureeRef.current) return;
+
     setLoading(true);
+    try {
+      const { data: resto } = await supabase.from('restaurants').select('*').eq('slug', slug).single();
+      if (!resto) { setLoading(false); return; }
+      setRestaurant(resto);
 
-    // Vérification sessionStorage en premier
-    if (sessionStorage.getItem(`cloture_${tableId}`)) {
-      setTableCloturee(true);
-      tableClotureeRef.current = true;
-      recuAfficheRef.current = true;
-      setLoading(false);
-      return;
-    }
+      const { data: tbl } = await supabase.from('tables').select('*').eq('id', tableId).single();
+      setTable(tbl);
 
-    const { data: resto } = await supabase.from('restaurants').select('*').eq('slug', slug).single();
-    if (!resto) { setLoading(false); return; }
-    setRestaurant(resto);
+      const { data: cats } = await supabase.from('categories').select('*').eq('restaurant_id', resto.id).order('ordre');
+      setCategories(cats || []);
+      if (cats?.length) setActiveCat(cats[0].id);
 
-    const { data: tbl } = await supabase.from('tables').select('*').eq('id', tableId).single();
-    setTable(tbl);
+      const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).order('ordre');
+      setPlats(pls || []);
 
-    const { data: cats } = await supabase.from('categories').select('*').eq('restaurant_id', resto.id).order('ordre');
-    setCategories(cats || []);
-    if (cats?.length) setActiveCat(cats[0].id);
+      // Vérifier si des commandes actives existent
+      const { data: cmdsActives } = await supabase
+        .from('commandes').select('id, statut').eq('table_id', tableId)
+        .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']);
 
-    const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).order('ordre');
-    setPlats(pls || []);
+      if (cmdsActives?.length) {
+        // Commandes actives → charger normalement
+        await loadCommandes(tableId);
+        setLoading(false);
+        return;
+      }
 
-    // Vérifier en base si la table est clôturée depuis moins de 2h
-    const [{ data: cmdsActives }, { data: cmdsTotal }] = await Promise.all([
-      supabase.from('commandes').select('id').eq('table_id', tableId).not('statut', 'in', '(cloture,annule)'),
-      supabase.from('commandes').select('id').eq('table_id', tableId).order('created_at', { ascending: false }).limit(1),
-    ]);
-    if (cmdsTotal?.length && !cmdsActives?.length) {
+      // Aucune commande active — vérifier si clôturée il y a < 30 min
       const { data: recente } = await supabase
         .from('commandes').select('updated_at')
         .eq('table_id', tableId).eq('statut', 'cloture')
         .order('updated_at', { ascending: false }).limit(1);
+
       if (recente?.length) {
         const diff = Date.now() - new Date(recente[0].updated_at).getTime();
-        if (diff < 2 * 60 * 60 * 1000) {
+        if (diff < 30 * 60 * 1000) {
           setTableCloturee(true);
           tableClotureeRef.current = true;
           recuAfficheRef.current = true;
-          sessionStorage.setItem(`cloture_${tableId}`, '1');
           setLoading(false);
           return;
         }
       }
-    }
 
-    await loadCommandes(tableId);
-    setLoading(false);
+      // Table libre ou clôturée il y a longtemps → menu normal
+      await loadCommandes(tableId);
+    } catch (err) {
+      if (!tableClotureeRef.current) {
+        console.error('[loadData] Erreur:', err);
+      }
+    } finally {
+      if (!tableClotureeRef.current) setLoading(false);
+    }
   }
 
   async function loadCommandes(tid) {
@@ -142,7 +151,6 @@ export default function MenuPage({ params }) {
     try {
       recuAfficheRef.current = true;
       tableClotureeRef.current = true;
-      sessionStorage.setItem(`cloture_${tableId}`, '1');
       setCommandes([]);
       setAllItems({});
       // setTimeout garantit le re-render sur iPhone/Safari
@@ -150,27 +158,22 @@ export default function MenuPage({ params }) {
       console.log('[afficherRecu] Écran fin activé');
     } catch (err) {
       console.error('[afficherRecu] Erreur:', err);
-      setTableCloturee(true);
       recuAfficheRef.current = true;
       tableClotureeRef.current = true;
-      sessionStorage.setItem(`cloture_${tableId}`, '1');
+      setTableCloturee(true);
     } finally {
       recuEnCoursRef.current = false;
     }
-  }, [tableId]);
+  }, []);
 
   useEffect(() => {
     if (!tableId) return;
-
-    // Vérifier sessionStorage au démarrage
-    if (sessionStorage.getItem(`cloture_${tableId}`)) {
-      setTableCloturee(true);
-      tableClotureeRef.current = true;
-      return;
-    }
+    if (tableClotureeRef.current) return;
 
     const channel = supabase
-      .channel(`table-client-${tableId}`)
+      .channel(`menu-${tableId}-${Date.now()}`, {
+        config: { broadcast: { self: true } }
+      })
 
       // UPDATE commandes — TOUJOURS mettre à jour le state
       .on('postgres_changes', {
@@ -181,7 +184,6 @@ export default function MenuPage({ params }) {
         const nouveauStatut = payload.new.statut;
         console.log('[RT] UPDATE commande:', payload.new.id, payload.old?.statut, '→', nouveauStatut);
 
-        // Mettre à jour le statut pour TOUS les cas
         setCommandes(prev => {
           const updated = prev.map(cmd =>
             cmd.id === payload.new.id ? { ...cmd, ...payload.new } : cmd
@@ -190,17 +192,15 @@ export default function MenuPage({ params }) {
           return updated;
         });
 
-        // Traitement spécial clôture
         if (nouveauStatut === 'cloture') {
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 800));
           if (recuAfficheRef.current) return;
           const { data: cmdsActives } = await supabase
-            .from('commandes').select('id, statut').eq('table_id', tableId)
+            .from('commandes').select('id')
+            .eq('table_id', tableId)
             .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']);
           console.log('[RT] Actives restantes:', cmdsActives?.length);
-          if (!cmdsActives?.length) {
-            await afficherRecu();
-          }
+          if (!cmdsActives?.length) await afficherRecu();
         }
       })
 
@@ -248,6 +248,7 @@ export default function MenuPage({ params }) {
       .subscribe((status) => {
         console.log('[RT] Status:', status);
         setRealtimeConnecte(status === 'SUBSCRIBED');
+        if (status === 'CHANNEL_ERROR') console.error('[RT] CHANNEL_ERROR — vérifier connexion Supabase');
       });
 
     return () => { supabase.removeChannel(channel); };
@@ -359,12 +360,9 @@ export default function MenuPage({ params }) {
   const totalGlobal = commandes.reduce((s, c) => s + (c.total || 0), 0);
   const toutesServies = commandes.length > 0 && commandes.every(c => c.statut === 'servi');
 
+  if (tableCloturee) return <EcranFin />;
   if (loading) return <LoadingScreen />;
   if (!restaurant) return <ErrorScreen />;
-
-  if (tableCloturee) {
-    return <EcranFin />;
-  }
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', maxWidth: 430, margin: '0 auto', fontFamily: "'DM Sans', system-ui, sans-serif", position: 'relative' }}>
