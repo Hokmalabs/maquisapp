@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 
 const C = {
-  bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryDark: '#E85520',
-  primaryLight: '#FFF0EB', dark: '#3D0C11', gray: '#8A8A9A', grayLight: '#F0F0F5',
+  bg: '#F5F5F5', white: '#FFFFFF', primary: '#FF6B35', primaryDark: '#E85520',
+  primaryLight: '#FFF0EB', dark: '#1A1A2E', gray: '#8A8A9A', grayLight: '#F0F0F5',
   border: '#E8E8F0', green: '#00C851', yellow: '#FFB800', red: '#FF3B30',
   shadow: 'rgba(0,0,0,0.08)', shadowMd: 'rgba(0,0,0,0.14)',
 };
@@ -14,7 +14,7 @@ const C = {
 const STATUT_CONFIG = {
   en_attente:     { label: 'En attente',     color: '#FFB800', icon: '⏳', bg: '#FFF8E1' },
   valide:         { label: 'Validée',        color: '#00C851', icon: '✅', bg: '#E8F5E9' },
-  en_preparation: { label: 'En préparation', color: '#8B1A27', icon: '👨‍🍳', bg: '#FFF0EB' },
+  en_preparation: { label: 'En préparation', color: '#FF6B35', icon: '👨‍🍳', bg: '#FFF0EB' },
   presque_pret:   { label: 'Presque prêt !', color: '#E85520', icon: '🔔', bg: '#FFE8E0' },
   servi:          { label: 'Servi',          color: '#00C851', icon: '🍽️', bg: '#E8F5E9' },
   cloture:        { label: 'Clôturée',       color: '#8A8A9A', icon: '✔️', bg: '#F5F5F5' },
@@ -38,81 +38,40 @@ export default function MenuPage({ params }) {
   const [showDetailCmd, setShowDetailCmd]     = useState(null);
   const [appelEnvoye, setAppelEnvoye] = useState(false);
   const [demandeEnvoyee, setDemandeEnvoyee] = useState(false);
-  const [realtimeConnecte, setRealtimeConnecte] = useState(false);
   const [sending, setSending]         = useState(false);
   const [platDetail, setPlatDetail]   = useState(null);
   const [tableCloturee, setTableCloturee] = useState(false);
   const [itemSupprime, setItemSupprime] = useState(null);
-  const catRefs         = useRef({});
-  const sendingRef      = useRef(false);
-  const recuEnCoursRef  = useRef(false);
-  const recuAfficheRef  = useRef(false);
-  const tableClotureeRef = useRef(false);
-  const commandesRef    = useRef([]);
-
-  useEffect(() => { tableClotureeRef.current = tableCloturee; }, [tableCloturee]);
-  useEffect(() => { commandesRef.current = commandes; }, [commandes]);
+  const catRefs    = useRef({});
+  const sendingRef = useRef(false);
+  const recuEnCours = useRef(false);
 
   useEffect(() => { loadData(); }, [slug, tableId]);
 
-  async function loadData() {
-    // Ne pas recharger si déjà clôturée
-    if (tableClotureeRef.current) return;
-
-    setLoading(true);
-    try {
-      const { data: resto } = await supabase.from('restaurants').select('*').eq('slug', slug).single();
-      if (!resto) { setLoading(false); return; }
-      setRestaurant(resto);
-
-      const { data: tbl } = await supabase.from('tables').select('*').eq('id', tableId).single();
-      setTable(tbl);
-
-      const { data: cats } = await supabase.from('categories').select('*').eq('restaurant_id', resto.id).order('ordre');
-      setCategories(cats || []);
-      if (cats?.length) setActiveCat(cats[0].id);
-
-      const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).order('ordre');
-      setPlats(pls || []);
-
-      // Vérifier si des commandes actives existent
-      const { data: cmdsActives } = await supabase
-        .from('commandes').select('id, statut').eq('table_id', tableId)
-        .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']);
-
-      if (cmdsActives?.length) {
-        // Commandes actives → charger normalement
-        await loadCommandes(tableId);
-        setLoading(false);
-        return;
-      }
-
-      // Aucune commande active — vérifier si clôturée il y a < 30 min
-      const { data: recente } = await supabase
-        .from('commandes').select('updated_at')
-        .eq('table_id', tableId).eq('statut', 'cloture')
-        .order('updated_at', { ascending: false }).limit(1);
-
-      if (recente?.length) {
-        const diff = Date.now() - new Date(recente[0].updated_at).getTime();
-        if (diff < 30 * 60 * 1000) {
-          setTableCloturee(true);
-          tableClotureeRef.current = true;
-          recuAfficheRef.current = true;
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Table libre ou clôturée il y a longtemps → menu normal
-      await loadCommandes(tableId);
-    } catch (err) {
-      if (!tableClotureeRef.current) {
-        console.error('[loadData] Erreur:', err);
-      }
-    } finally {
-      if (!tableClotureeRef.current) setLoading(false);
+  useEffect(() => {
+    if (sessionStorage.getItem(`cloture_${tableId}`)) {
+      setTableCloturee(true);
     }
+  }, [tableId]);
+
+  async function loadData() {
+    setLoading(true);
+    const { data: resto } = await supabase.from('restaurants').select('*').eq('slug', slug).single();
+    if (!resto) { setLoading(false); return; }
+    setRestaurant(resto);
+
+    const { data: tbl } = await supabase.from('tables').select('*').eq('id', tableId).single();
+    setTable(tbl);
+
+    const { data: cats } = await supabase.from('categories').select('*').eq('restaurant_id', resto.id).order('ordre');
+    setCategories(cats || []);
+    if (cats?.length) setActiveCat(cats[0].id);
+
+    const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).eq('disponible', true).order('ordre');
+    setPlats(pls || []);
+
+    await loadCommandes(tableId);
+    setLoading(false);
   }
 
   async function loadCommandes(tid) {
@@ -130,7 +89,7 @@ export default function MenuPage({ params }) {
     if (cmdList.length) {
       const itemsMap = {};
       await Promise.all(cmdList.map(async (cmd) => {
-        const { data } = await supabase.from('commande_items').select('*, plats(est_boisson)').eq('commande_id', cmd.id);
+        const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
         itemsMap[cmd.id] = data || [];
       }));
       setAllItems(itemsMap);
@@ -139,138 +98,87 @@ export default function MenuPage({ params }) {
     }
   }
 
-  const afficherRecu = useCallback(async () => {
-    console.log('[afficherRecu] Appelé', {
-      enCours: recuEnCoursRef.current,
-      dejaAffiche: recuAfficheRef.current,
-      cloturee: tableClotureeRef.current,
-    });
-    if (recuEnCoursRef.current) return;
-    if (recuAfficheRef.current) return;
-    recuEnCoursRef.current = true;
-    try {
-      recuAfficheRef.current = true;
-      tableClotureeRef.current = true;
-      setCommandes([]);
-      setAllItems({});
-      // setTimeout garantit le re-render sur iPhone/Safari
-      setTimeout(() => { setTableCloturee(true); }, 100);
-      console.log('[afficherRecu] Écran fin activé');
-    } catch (err) {
-      console.error('[afficherRecu] Erreur:', err);
-      recuAfficheRef.current = true;
-      tableClotureeRef.current = true;
-      setTableCloturee(true);
-    } finally {
-      recuEnCoursRef.current = false;
-    }
-  }, []);
-
   useEffect(() => {
-    if (!tableId) return;
-    if (tableClotureeRef.current) return;
-
-    const channel = supabase
-      .channel(`menu-${tableId}-${Date.now()}`, {
-        config: { broadcast: { self: true } }
-      })
-
-      // UPDATE commandes — TOUJOURS mettre à jour le state
+    if (!restaurant) return;
+    const ch = supabase.channel(`menu-${tableId}`)
       .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'commandes',
+        event: '*', schema: 'public', table: 'commandes',
         filter: `table_id=eq.${tableId}`
       }, async (payload) => {
-        if (!payload.new) return;
-        const nouveauStatut = payload.new.statut;
-        console.log('[RT] UPDATE commande:', payload.new.id, payload.old?.statut, '→', nouveauStatut);
+        const s = payload.new?.statut;
 
-        setCommandes(prev => {
-          const updated = prev.map(cmd =>
-            cmd.id === payload.new.id ? { ...cmd, ...payload.new } : cmd
-          );
-          console.log('[RT] State commandes:', updated.map(c => c.statut));
-          return updated;
-        });
-
-        if (nouveauStatut === 'cloture') {
-          await new Promise(r => setTimeout(r, 800));
-          if (recuAfficheRef.current) return;
-          const { data: cmdsActives } = await supabase
-            .from('commandes').select('id')
-            .eq('table_id', tableId)
-            .in('statut', ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi']);
-          console.log('[RT] Actives restantes:', cmdsActives?.length);
-          if (!cmdsActives?.length) await afficherRecu();
-        }
-      })
-
-      // INSERT nouvelle commande
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'commandes',
-        filter: `table_id=eq.${tableId}`
-      }, (payload) => {
-        if (!payload.new) return;
-        console.log('[RT] nouvelle commande:', payload.new.id);
-        if (payload.new.statut !== 'cloture') {
+        if (['en_attente','valide','en_preparation','presque_pret','servi'].includes(s)) {
           setCommandes(prev => {
-            if (prev.find(c => c.id === payload.new.id)) return prev;
-            return [...prev, payload.new];
+            const exists = prev.find(c => c.id === payload.new.id);
+            if (exists) {
+              return prev.map(c => c.id === payload.new.id ? { ...payload.new } : c);
+            }
+            if (!sendingRef.current) {
+              return [...prev, payload.new];
+            }
+            return prev;
           });
-          supabase.from('commande_items').select('*, plats(est_boisson)').eq('commande_id', payload.new.id)
-            .then(({ data }) => setAllItems(p => ({ ...p, [payload.new.id]: data || [] })));
+          setAllItems(prev => {
+            if (!prev[payload.new.id]) {
+              supabase.from('commande_items').select('*').eq('commande_id', payload.new.id)
+                .then(({ data }) => {
+                  setAllItems(p => ({ ...p, [payload.new.id]: data || [] }));
+                });
+            }
+            return prev;
+          });
+        } else if (s === 'cloture') {
+          if (recuEnCours.current) return;
+          setTimeout(async () => {
+            const { data: remaining } = await supabase
+              .from('commandes').select('id').eq('table_id', tableId)
+              .in('statut', ['en_attente','valide','en_preparation','presque_pret','servi']);
+            if (!remaining?.length) {
+              await afficherRecu();
+            } else {
+              setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
+              setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
+            }
+          }, 1500);
+        } else if (s === 'annule') {
+          setCommandes(prev => prev.filter(c => c.id !== payload.new.id));
+          setAllItems(prev => { const next = { ...prev }; delete next[payload.new.id]; return next; });
         }
       })
-
-      // DELETE commande_items — article retiré par le gérant
       .on('postgres_changes', {
-        event: 'DELETE', schema: 'public', table: 'commande_items'
+        event: 'DELETE', schema: 'public', table: 'commande_items',
       }, (payload) => {
-        if (!payload.old) return;
-        const nom = payload.old.nom_plat || 'Un article';
+        const nomPlat = payload.old?.nom_plat || 'Un article';
+        setItemSupprime(nomPlat);
         setAllItems(prev => {
           const next = { ...prev };
           for (const cmdId in next) {
-            next[cmdId] = (next[cmdId] || []).filter(i => i.id !== payload.old.id);
+            next[cmdId] = next[cmdId].filter(i => i.id !== payload.old?.id);
           }
           return next;
         });
-        setItemSupprime(nom);
       })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [restaurant, tableId]);
 
-      // UPDATE plats — stock et disponibilité
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'plats'
-      }, (payload) => {
-        if (!payload.new) return;
-        setPlats(prev => prev.map(p => p.id === payload.new.id ? payload.new : p));
-      })
-
-      .subscribe((status) => {
-        console.log('[RT] Status:', status);
-        setRealtimeConnecte(status === 'SUBSCRIBED');
-        if (status === 'CHANNEL_ERROR') console.error('[RT] CHANNEL_ERROR — vérifier connexion Supabase');
-      });
-
-    return () => { supabase.removeChannel(channel); };
-  }, [tableId, afficherRecu]);
+  async function afficherRecu() {
+    if (recuEnCours.current) return;
+    recuEnCours.current = true;
+    try {
+      setCommandes([]);
+      setAllItems({});
+      sessionStorage.setItem(`cloture_${tableId}`, '1');
+      setTableCloturee(true);
+    } finally {
+      recuEnCours.current = false;
+    }
+  }
 
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0);
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0);
 
   function ajouterAuPanier(plat) {
-    if (!plat.disponible) return
-
-    if (plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) <= 0) {
-      alert('Cette boisson est actuellement indisponible')
-      return
-    }
-
-    const quantiteDansPanier = panier.find(p => p.plat_id === plat.id)?.quantite || 0
-    if (plat.est_boisson && plat.stock_actif && (quantiteDansPanier + 1) > (plat.stock_actuel || 0)) {
-      alert("Cette boisson n'est plus disponible en quantité suffisante")
-      return
-    }
-
     setPanier(prev => {
       const ex = prev.find(i => i.plat_id === plat.id);
       if (ex) return prev.map(i => i.plat_id === plat.id ? { ...i, quantite: i.quantite + 1 } : i);
@@ -360,9 +268,12 @@ export default function MenuPage({ params }) {
   const totalGlobal = commandes.reduce((s, c) => s + (c.total || 0), 0);
   const toutesServies = commandes.length > 0 && commandes.every(c => c.statut === 'servi');
 
-  if (tableCloturee) return <EcranFin />;
   if (loading) return <LoadingScreen />;
   if (!restaurant) return <ErrorScreen />;
+
+  if (tableCloturee) {
+    return <EcranFin />;
+  }
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', maxWidth: 430, margin: '0 auto', fontFamily: "'DM Sans', system-ui, sans-serif", position: 'relative' }}>
@@ -383,12 +294,12 @@ export default function MenuPage({ params }) {
         <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div style={{ background: '#fff', borderRadius: 20, padding: '28px 24px', maxWidth: 320, width: '100%', textAlign: 'center' }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#3D0C11', marginBottom: 8 }}>Article non disponible</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#1A1A2E', marginBottom: 8 }}>Article non disponible</div>
             <div style={{ fontSize: 14, color: '#8A8A9A', marginBottom: 20, lineHeight: 1.5 }}>
               "{itemSupprime}" a été retiré de votre commande par le restaurant.
             </div>
             <button onClick={() => setItemSupprime(null)}
-              style={{ width: '100%', background: '#8B1A27', border: 'none', borderRadius: 14, padding: '13px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ width: '100%', background: '#FF6B35', border: 'none', borderRadius: 14, padding: '13px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
               ✅ J'ai compris
             </button>
           </div>
@@ -452,7 +363,7 @@ export default function MenuPage({ params }) {
         )}
 
         {commandes.length === 0 && (
-          <div style={{ margin: '14px 16px 0', borderRadius: 18, background: 'linear-gradient(135deg, #8B1A27 0%, #FF8C42 60%, #FFB347 100%)', padding: '18px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ margin: '14px 16px 0', borderRadius: 18, background: 'linear-gradient(135deg, #FF6B35 0%, #FF8C42 60%, #FFB347 100%)', padding: '18px', position: 'relative', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', right: -10, top: -10, fontSize: 72, opacity: .13 }}>🍽️</div>
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,.85)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Bienvenue !</div>
             <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 4, lineHeight: 1.25 }}>Commandez<br/>directement ici 👇</div>
@@ -538,12 +449,6 @@ export default function MenuPage({ params }) {
         <ModalDetailCommande cmd={showDetailCmd} items={allItems[showDetailCmd.id] || []}
           onClose={() => setShowDetailCmd(null)} />
       )}
-
-      {!realtimeConnecte && !tableCloturee && (
-        <div style={{ position: 'fixed', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: '#FFB800', color: '#1A0A0F', padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700, zIndex: 100, pointerEvents: 'none', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
-          Reconnexion...
-        </div>
-      )}
     </div>
   );
 }
@@ -577,20 +482,8 @@ function CommandeStatusBanner({ cmd, items, index, total, onVoirDetails, onPayer
 
 function ModalDetailCommande({ cmd, items, onClose }) {
   const cfg = STATUT_CONFIG[cmd.statut] || STATUT_CONFIG.en_attente;
-  const estUniquementBoissons = items.length > 0 && items.every(i => i.plats?.est_boisson === true);
-  const parcours = estUniquementBoissons ? [
-    { key: 'en_attente', label: 'Commande reçue', icon: '📝' },
-    { key: 'servi',      label: 'Servi',           icon: '🍺' },
-  ] : [
-    { key: 'en_attente',     label: 'En attente',     icon: '⏳' },
-    { key: 'valide',         label: 'Validée',        icon: '✅' },
-    { key: 'en_preparation', label: 'En préparation', icon: '👨‍🍳' },
-    { key: 'presque_pret',   label: 'Presque prêt',   icon: '🔔' },
-    { key: 'servi',          label: 'Servi',           icon: '🍽️' },
-  ];
-  const stepIdx = estUniquementBoissons
-    ? (cmd.statut === 'servi' ? 1 : 0)
-    : parcours.findIndex(s => s.key === cmd.statut);
+  const steps = ['en_attente', 'valide', 'en_preparation', 'presque_pret', 'servi'];
+  const stepIdx = steps.indexOf(cmd.statut);
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
@@ -600,7 +493,7 @@ function ModalDetailCommande({ cmd, items, onClose }) {
         </div>
         <div style={{ padding: '10px 18px 12px', borderBottom: '1px solid #F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#3D0C11' }}>Détail commande</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#1A1A2E' }}>Détail commande</div>
             <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 1 }}>{cmd.total?.toLocaleString()} FCFA</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -610,31 +503,24 @@ function ModalDetailCommande({ cmd, items, onClose }) {
         </div>
         <div style={{ padding: '12px 18px', borderBottom: '1px solid #F0F0F5' }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            {parcours.map((s, i) => (
-              <div key={s.key} style={{ display: 'flex', alignItems: 'center', flex: i < parcours.length - 1 ? 1 : 'none' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', background: i <= stepIdx ? '#8B1A27' : '#F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {steps.map((s, i) => (
+              <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 1 : 'none' }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: i <= stepIdx ? '#FF6B35' : '#F0F0F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {i <= stepIdx ? <span style={{ color: '#fff', fontSize: 11 }}>✓</span> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E8E8F0', display: 'block' }}></span>}
                 </div>
-                {i < parcours.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? '#8B1A27' : '#F0F0F5', margin: '0 3px' }}></div>}
+                {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < stepIdx ? '#FF6B35' : '#F0F0F5', margin: '0 3px' }}></div>}
               </div>
             ))}
           </div>
-          {estUniquementBoissons && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-              {parcours.map(s => (
-                <div key={s.key} style={{ fontSize: 9, color: '#8A8A9A', textAlign: 'center', flex: 1 }}>{s.icon} {s.label}</div>
-              ))}
-            </div>
-          )}
         </div>
         <div style={{ overflowY: 'auto', flex: 1, padding: '10px 18px 24px' }}>
           {items.map(item => (
             <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F0F0F5' }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#3D0C11' }}>{item.nom_plat}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{item.nom_plat}</div>
                 <div style={{ fontSize: 11, color: '#8A8A9A' }}>×{item.quantite}</div>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#8B1A27' }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#FF6B35' }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
             </div>
           ))}
         </div>
@@ -644,41 +530,30 @@ function ModalDetailCommande({ cmd, items, onClose }) {
 }
 
 function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
-  const estRupture = plat.est_boisson && plat.stock_actif && (plat.stock_actuel || 0) <= 0
-  const estBloque = !plat.disponible || estRupture
   return (
-    <div style={{ position: 'relative' }}>
-      <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: estBloque ? 'default' : 'pointer', transition: 'transform .15s', opacity: estBloque ? 0.4 : 1, pointerEvents: estBloque ? 'none' : 'auto' }} onClick={estBloque ? undefined : onClick}>
-        {plat.image_url
-          ? <img src={plat.image_url} alt={plat.nom} style={{ width: 95, height: 95, objectFit: 'cover', flexShrink: 0 }} />
-          : <div style={{ width: 95, height: 95, background: 'linear-gradient(135deg, #FFF0EB, #FFE0D5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>🍽️</div>
-        }
-        <div style={{ flex: 1, padding: '11px 13px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', lineHeight: 1.3 }}>{plat.nom}</div>
-            {!plat.disponible && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Indisponible</div>}
-            {plat.disponible && estRupture && <div style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', marginTop: 3 }}>Rupture de stock</div>}
-            {plat.disponible && !estRupture && plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#8B1A27' }}>{plat.prix.toLocaleString()} F</div>
-            <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              {quantite > 0 && (
-                <>
-                  <button onClick={onRemove} style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3D0C11' }}>−</button>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#3D0C11', minWidth: 14, textAlign: 'center' }}>{quantite}</span>
-                </>
-              )}
-              <button onClick={onAdd} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: '#8B1A27', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
-            </div>
+    <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: 'pointer', transition: 'transform .15s' }} onClick={onClick}>
+      {plat.image_url
+        ? <img src={plat.image_url} alt={plat.nom} style={{ width: 95, height: 95, objectFit: 'cover', flexShrink: 0 }} />
+        : <div style={{ width: 95, height: 95, background: 'linear-gradient(135deg, #FFF0EB, #FFE0D5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>🍽️</div>
+      }
+      <div style={{ flex: 1, padding: '11px 13px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E', lineHeight: 1.3 }}>{plat.nom}</div>
+          {plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#FF6B35' }}>{plat.prix.toLocaleString()} F</div>
+          <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            {quantite > 0 && (
+              <>
+                <button onClick={onRemove} style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A2E' }}>−</button>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E', minWidth: 14, textAlign: 'center' }}>{quantite}</span>
+              </>
+            )}
+            <button onClick={onAdd} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: '#FF6B35', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
           </div>
         </div>
       </div>
-      {estRupture && (
-        <div style={{ position: 'absolute', top: 8, right: 8, background: '#FF3B30', color: '#fff', padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700, zIndex: 2, pointerEvents: 'none' }}>
-          Indisponible
-        </div>
-      )}
     </div>
   );
 }
@@ -692,10 +567,10 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
           <div style={{ width: 36, height: 4, borderRadius: 2, background: '#E8E8F0' }}></div>
         </div>
         <div style={{ padding: '10px 18px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #F0F0F5' }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#3D0C11' }}>{isNouvelle ? '➕ Nouvelle commande' : 'Mon panier 🛒'}</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#1A1A2E' }}>{isNouvelle ? '➕ Nouvelle commande' : 'Mon panier 🛒'}</div>
           <button onClick={onClose} style={{ background: '#F5F5F5', border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
         </div>
-        {isNouvelle && <div style={{ padding: '8px 18px 0', fontSize: 11, color: '#8B1A27', fontWeight: 600 }}>ℹ️ Cette commande sera ajoutée à votre session en cours</div>}
+        {isNouvelle && <div style={{ padding: '8px 18px 0', fontSize: 11, color: '#FF6B35', fontWeight: 600 }}>ℹ️ Cette commande sera ajoutée à votre session en cours</div>}
         <div style={{ overflowY: 'auto', flex: 1, padding: '10px 18px' }}>
           {panier.map(item => {
             const plat = plats.find(p => p.id === item.plat_id);
@@ -704,13 +579,13 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
                 {plat?.image_url ? <img src={plat.image_url} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover' }} />
                   : <div style={{ width: 48, height: 48, borderRadius: 10, background: '#FFF0EB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🍽️</div>}
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#3D0C11' }}>{item.nom}</div>
-                  <div style={{ fontSize: 12, color: '#8B1A27', fontWeight: 700 }}>{(item.prix * item.quantite).toLocaleString()} F</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{item.nom}</div>
+                  <div style={{ fontSize: 12, color: '#FF6B35', fontWeight: 700 }}>{(item.prix * item.quantite).toLocaleString()} F</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                   <button onClick={() => onRemove(item.plat_id)} style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #E8E8F0', background: '#fff', cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
                   <span style={{ fontSize: 13, fontWeight: 700, minWidth: 14, textAlign: 'center' }}>{item.quantite}</span>
-                  <button onClick={() => onAdd(plat)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: '#8B1A27', cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
+                  <button onClick={() => onAdd(plat)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: '#FF6B35', cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
                 </div>
               </div>
             );
@@ -719,10 +594,10 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
         <div style={{ padding: '14px 18px 0', borderTop: '1px solid #F0F0F5' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
             <span style={{ fontSize: 13, color: '#8A8A9A' }}>Total</span>
-            <span style={{ fontSize: 17, fontWeight: 800, color: '#3D0C11' }}>{total.toLocaleString()} FCFA</span>
+            <span style={{ fontSize: 17, fontWeight: 800, color: '#1A1A2E' }}>{total.toLocaleString()} FCFA</span>
           </div>
           <button className="btn-cmd" onClick={onCommander} disabled={sending}
-            style={{ width: '100%', background: sending ? '#ccc' : '#8B1A27', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ width: '100%', background: sending ? '#ccc' : '#FF6B35', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
             {sending ? '⏳ Envoi en cours...' : (isNouvelle ? '✅ Envoyer cette commande' : '✅ Envoyer la commande')}
           </button>
         </div>
@@ -740,14 +615,14 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
           : <div style={{ width: '100%', height: 170, background: 'linear-gradient(135deg, #FFF0EB, #FFE0D5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 56 }}>🍽️</div>}
         <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: '#fff', border: 'none', borderRadius: '50%', width: 34, height: 34, cursor: 'pointer', fontSize: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.14)' }}>✕</button>
         <div style={{ padding: '18px 18px 36px' }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#3D0C11' }}>{plat.nom}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#1A1A2E' }}>{plat.nom}</div>
           {plat.description && <div style={{ fontSize: 13, color: '#8A8A9A', marginTop: 7, lineHeight: 1.6 }}>{plat.description}</div>}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: '#8B1A27' }}>{plat.prix.toLocaleString()} FCFA</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#FF6B35' }}>{plat.prix.toLocaleString()} FCFA</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {quantite > 0 && <button onClick={onRemove} style={{ width: 36, height: 36, borderRadius: 9, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>}
               {quantite > 0 && <span style={{ fontSize: 15, fontWeight: 700 }}>{quantite}</span>}
-              <button onClick={onAdd} style={{ background: '#8B1A27', border: 'none', borderRadius: 9, width: 36, height: 36, cursor: 'pointer', fontSize: 20, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+              <button onClick={onAdd} style={{ background: '#FF6B35', border: 'none', borderRadius: 9, width: 36, height: 36, cursor: 'pointer', fontSize: 20, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
             </div>
           </div>
         </div>
@@ -759,19 +634,15 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
 function EcranFin() {
   return (
     <div style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
       minHeight: '100vh',
-      minHeight: '-webkit-fill-available',
-      background: '#1A0A0F',
+      background: '#1A1A2E',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       fontFamily: "'DM Sans', system-ui",
       padding: 32,
-      textAlign: 'center',
-      zIndex: 9999,
+      textAlign: 'center'
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&display=swap');
@@ -780,16 +651,34 @@ function EcranFin() {
           50%{transform:translateY(-10px)}
         }
       `}</style>
-      <div style={{ fontSize: 72, marginBottom: 24, animation: 'float 3s ease-in-out infinite' }}>🙏</div>
-      <div style={{ fontSize: 26, fontWeight: 800, color: '#fff', marginBottom: 12 }}>
+      <div style={{
+        fontSize: 72,
+        marginBottom: 24,
+        animation: 'float 3s ease-in-out infinite'
+      }}>
+        🙏
+      </div>
+      <div style={{
+        fontSize: 26, fontWeight: 800,
+        color: '#fff', marginBottom: 12
+      }}>
         Merci de votre visite !
       </div>
-      <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7, maxWidth: 280 }}>
-        Votre paiement a bien ete enregistre.
-        Nous esperons vous revoir tres bientot !
+      <div style={{
+        fontSize: 15,
+        color: 'rgba(255,255,255,0.6)',
+        lineHeight: 1.7,
+        maxWidth: 280
+      }}>
+        Votre paiement a été enregistré.{'\n'}
+        Nous espérons vous revoir très bientôt !
       </div>
-      <div style={{ marginTop: 48, fontSize: 12, color: 'rgba(255,255,255,0.25)', lineHeight: 1.6 }}>
-        Pour commander a nouveau,{'\n'}
+      <div style={{
+        marginTop: 48,
+        fontSize: 12,
+        color: 'rgba(255,255,255,0.2)'
+      }}>
+        Pour commander à nouveau,{'\n'}
         scannez le QR code de votre table
       </div>
     </div>
@@ -800,7 +689,7 @@ function LoadingScreen() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#F5F5F5', fontFamily: 'system-ui' }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>🍽️</div>
-      <div style={{ marginTop: 14, fontSize: 15, fontWeight: 600, color: '#3D0C11' }}>Chargement du menu...</div>
+      <div style={{ marginTop: 14, fontSize: 15, fontWeight: 600, color: '#1A1A2E' }}>Chargement du menu...</div>
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.1)}}`}</style>
     </div>
   );
@@ -810,7 +699,7 @@ function ErrorScreen() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#F5F5F5', fontFamily: 'system-ui', padding: 24 }}>
       <div style={{ fontSize: 44 }}>😕</div>
-      <div style={{ marginTop: 14, fontSize: 17, fontWeight: 700, color: '#3D0C11' }}>Restaurant introuvable</div>
+      <div style={{ marginTop: 14, fontSize: 17, fontWeight: 700, color: '#1A1A2E' }}>Restaurant introuvable</div>
       <div style={{ marginTop: 7, fontSize: 13, color: '#8A8A9A', textAlign: 'center' }}>Vérifiez le QR code ou contactez le restaurant</div>
     </div>
   );
