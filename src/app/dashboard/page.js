@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -54,7 +54,22 @@ export default function DashboardPage() {
   useEffect(() => { loadData() }, [])
 
   useEffect(() => {
-    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); setShowInstallBtn(true) }
+    const isInstalled = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+    if (isInstalled) return
+
+    // Récupérer l'event capturé tôt (avant hydration React)
+    if (window.__installPrompt) {
+      setInstallPrompt(window.__installPrompt)
+      setShowInstallBtn(true)
+      return
+    }
+
+    const handler = (e) => {
+      e.preventDefault()
+      window.__installPrompt = e
+      setInstallPrompt(e)
+      setShowInstallBtn(true)
+    }
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
@@ -447,7 +462,7 @@ export default function DashboardPage() {
             { icon: '🪑', label: 'Tables & QR', desc: 'Gérer les tables', path: '/dashboard/tables', circleColor: '#5B8DEF', shadow: 'rgba(91,141,239,.3)' },
             { icon: '📊', label: 'Historique', desc: 'CA & rapports', path: '/dashboard/historique', circleColor: '#9B59B6', shadow: 'rgba(155,89,182,.3)' },
             { icon: '🥤', label: 'Stock boissons', desc: 'Niveaux & alertes', path: '/dashboard/stock', circleColor: '#E85520', shadow: 'rgba(232,85,32,.3)', span2: true },
-          ].map((item, i) => (
+          ].map((item) => (
             <button key={item.path} className="card-btn" onClick={() => router.push(item.path)}
               style={{ background: C.white, borderRadius: 18, padding: '18px 16px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', textAlign: 'left', cursor: 'pointer', border: 'none', fontFamily: 'inherit', transition: 'transform .15s', gridColumn: item.span2 ? 'span 2' : 'span 1', display: 'flex', alignItems: item.span2 ? 'center' : 'block', gap: item.span2 ? 16 : 0 }}>
               <div style={{ width: 52, height: 52, borderRadius: '50%', background: item.circleColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: item.span2 ? 0 : 12, flexShrink: 0, boxShadow: `0 4px 14px ${item.shadow}` }}>{item.icon}</div>
