@@ -116,26 +116,13 @@ function CallbackHandler() {
       .select().single()
 
     if (restoError) {
-      // Contrainte unique email → chercher le restaurant existant et le lier
-      const { data: restoByEmail } = await supabase
-        .from('restaurants').select('id').eq('email', user.email).maybeSingle()
-      if (restoByEmail) {
-        await supabase.from('profiles').upsert({
-          id: user.id, restaurant_id: restoByEmail.id,
-          nom: nameParts[1] || '', prenom: nameParts[0] || '', role: 'gerant',
-        })
-        setStatus('Bienvenue ! Redirection...')
-        router.push('/dashboard')
-        return
-      }
-      // Profil déjà créé lors d'une tentative précédente
+      // Restaurant existe peut-être déjà (double appel) → chercher le profil à nouveau
       const { data: profileRetry } = await supabase
         .from('profiles').select('restaurant_id').eq('id', user.id).maybeSingle()
       if (profileRetry?.restaurant_id) {
         router.push('/dashboard')
         return
       }
-      console.error('Erreur création restaurant:', restoError)
       setStatus('Erreur lors de la création')
       setTimeout(() => router.push('/auth/login'), 2000)
       return

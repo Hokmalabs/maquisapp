@@ -26,14 +26,17 @@ export default function LoginPage() {
   const handleLogin = async (e) => {
     e.preventDefault()
     setError('')
+
+    // Détection : téléphone si pas de "@"
+    if (!identifiant.includes('@')) {
+      setError('Connexion par téléphone disponible prochainement. Utilisez votre email.')
+      return
+    }
+
     setLoading(true)
-    // Connexion téléphone → convertir en email factice (même logique que l'inscription)
-    const emailPourAuth = identifiant.includes('@')
-      ? identifiant
-      : `${identifiant.replace(/\s+/g, '')}@maquisapp.com`
-    const { error } = await supabase.auth.signInWithPassword({ email: emailPourAuth, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: identifiant, password })
     if (error) {
-      setError('Identifiant ou mot de passe incorrect')
+      setError('Email ou mot de passe incorrect')
       setLoading(false)
       return
     }
