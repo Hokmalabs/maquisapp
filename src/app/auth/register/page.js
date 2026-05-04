@@ -53,19 +53,34 @@ export default function RegisterPage() {
       setError("Veuillez accepter les conditions d'utilisation")
       return
     }
+    if (!form.telephone || form.telephone.replace(/\s+/g, '').length < 8) {
+      setError('Le numéro de téléphone est requis (min. 8 chiffres)')
+      return
+    }
+    if (form.email && !form.email.includes('@')) {
+      setError('Adresse email invalide')
+      return
+    }
     setLoading(true)
     setError('')
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password })
+      // Si pas d'email, utiliser le téléphone comme identifiant Supabase
+      const emailPourAuth = form.email || `${form.telephone.replace(/\s+/g, '')}@maquisapp.com`
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: emailPourAuth,
+        password: form.password,
+        options: { data: { telephone: form.telephone, nom: form.nom_gerant, prenom: form.prenom_gerant } },
+      })
       if (authError) throw authError
       const userId = authData.user.id
       const slug = generateSlug(form.nom_restaurant)
       const { data: restaurant, error: restoError } = await supabase.from('restaurants')
         .insert({
-          nom: form.nom_restaurant, slug, email: form.email, telephone: form.telephone, ville: form.ville,
+          nom: form.nom_restaurant, slug,
+          email: form.email || null,
+          telephone: form.telephone, ville: form.ville,
           abonnement_statut: 'essai',
           abonnement_fin: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-          abonnement_plan: null,
         })
         .select().single()
       if (restoError) throw restoError
@@ -143,7 +158,7 @@ export default function RegisterPage() {
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
               <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,.1)' }}></div>
-              <span style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>ou avec email</span>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>ou avec téléphone</span>
               <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,.1)' }}></div>
             </div>
           </>
@@ -159,7 +174,7 @@ export default function RegisterPage() {
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 14 }}>🏪 Votre Restaurant</div>
                 <input name="nom_restaurant" value={form.nom_restaurant} onChange={handleChange} placeholder="Nom du restaurant *" required
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', marginBottom: 10, transition: 'border-color .2s' }} />
-                <input name="telephone" value={form.telephone} onChange={handleChange} placeholder="Téléphone (ex: 0708091234)"
+                <input name="telephone" type="tel" value={form.telephone} onChange={handleChange} placeholder="Téléphone * (ex: 0708091234)" required
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', marginBottom: 10, transition: 'border-color .2s' }} />
                 <select name="ville" value={form.ville} onChange={handleChange}
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer' }}>
@@ -184,7 +199,7 @@ export default function RegisterPage() {
                   <input name="nom_gerant" value={form.nom_gerant} onChange={handleChange} placeholder="Nom *" required
                     style={{ padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', transition: 'border-color .2s' }} />
                 </div>
-                <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="Email *" required
+                <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="Email (optionnel)"
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', marginBottom: 10, transition: 'border-color .2s' }} />
                 <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="Mot de passe (min. 6 caractères) *" required minLength={6}
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.07)', color: C.white, fontSize: 13, fontFamily: 'inherit', transition: 'border-color .2s' }} />
