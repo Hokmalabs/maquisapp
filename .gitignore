@@ -32,3 +32,11 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+# Supabase
+supabase/.temp/
+supabase/.branches/
+.supabase/
+
+# Backups SQL
+backup-*.sql
+*.dump
