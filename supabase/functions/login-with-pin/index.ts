@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    const redirectTo = profile.role === 'super_admin' ? '/hokma-admin' : '/dashboard'
+    const redirectTo = profile.role === 'super_admin' ? '/admin' : '/dashboard'
     console.log(`[login-with-pin] Connexion réussie pour userId: ${profile.id} → ${redirectTo}`)
 
     return new Response(

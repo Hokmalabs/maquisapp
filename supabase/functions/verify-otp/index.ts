@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
 
       const session = await generateSessionTokens(supabaseAdmin, emailForSession)
 
-      const redirectTo = existingProfile.role === 'super_admin' ? '/hokma-admin' : '/dashboard'
+      const redirectTo = existingProfile.role === 'super_admin' ? '/admin' : '/dashboard'
 
       return new Response(
         JSON.stringify({

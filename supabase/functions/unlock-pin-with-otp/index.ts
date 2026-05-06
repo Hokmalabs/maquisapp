@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
       email: emailForSession,
     })
 
-    const redirectTo = profile.role === 'super_admin' ? '/hokma-admin' : '/dashboard'
+    const redirectTo = profile.role === 'super_admin' ? '/admin' : '/dashboard'
 
     if (linkErr || !linkData?.properties?.hashed_token) {
       console.error('[unlock-pin-with-otp] generateLink error:', linkErr)
