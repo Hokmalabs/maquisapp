@@ -45,10 +45,12 @@ export default function DashboardPage() {
   const [selectedTable, setSelectedTable] = useState(null)
   const [panier, setPanier] = useState([])
   const [activeCat, setActiveCat] = useState(null)
-  const [cmdStep, setCmdStep] = useState('table') // table | menu | confirm
+  const [cmdStep, setCmdStep] = useState('table')
   const [sendingCmd, setSendingCmd] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showInstallBtn, setShowInstallBtn] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+  const [showIOSInstructions, setShowIOSInstructions] = useState(false)
   const [alertesStock, setAlertesStock] = useState(0)
 
   useEffect(() => { loadData() }, [])
@@ -56,6 +58,16 @@ export default function DashboardPage() {
   useEffect(() => {
     const isInstalled = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
     if (isInstalled) return
+
+    // Détecter iOS Safari (pas de beforeinstallprompt)
+    const ua = window.navigator.userAgent.toLowerCase()
+    const iOS = /iphone|ipad|ipod/.test(ua) && !window.MSStream
+    const isSafari = /safari/.test(ua) && !/chrome|crios|fxios/.test(ua)
+    if (iOS && isSafari) {
+      setIsIOS(true)
+      setShowInstallBtn(true)
+      return
+    }
 
     // Récupérer l'event capturé tôt (avant hydration React)
     if (window.__installPrompt) {
@@ -146,7 +158,6 @@ export default function DashboardPage() {
     if (cats?.length) setActiveCat(cats[0].id)
     setPlats(pls || [])
 
-    // ── Vérification onboarding (nouveau restaurant) ───────────────────────
     const [{ data: platsCheck }, { data: tablesCheck }] = await Promise.all([
       supabase.from('plats').select('id').eq('restaurant_id', rid).limit(1),
       supabase.from('tables').select('id').eq('restaurant_id', rid).limit(1),
@@ -196,7 +207,6 @@ export default function DashboardPage() {
 
   const formatCFA = (n) => new Intl.NumberFormat('fr-FR').format(n) + ' F'
 
-  // ── COMMANDE MANUELLE ─────────────────────────────────────────────────────
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0)
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0)
 
@@ -323,7 +333,19 @@ export default function DashboardPage() {
         <div style={{ margin: '10px 16px 0', background: 'linear-gradient(135deg, #8B1A27, #E85520)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>📲 Installer MaquisApp sur votre écran d'accueil</span>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button onClick={async () => { if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null) } setShowInstallBtn(false) }}
+            <button onClick={async () => {
+              if (isIOS) {
+                setShowIOSInstructions(true)
+                return
+              }
+              if (installPrompt) {
+                await installPrompt.prompt()
+                setInstallPrompt(null)
+                setShowInstallBtn(false)
+              } else {
+                alert("L'installation n'est pas encore disponible. Rafraîchissez la page et réessayez.")
+              }
+            }}
               style={{ background: '#fff', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#8B1A27', cursor: 'pointer', fontFamily: 'inherit' }}>
               Installer
             </button>
@@ -350,11 +372,8 @@ export default function DashboardPage() {
               ? `url(${restaurant.logo_url}) center/cover no-repeat`
               : 'linear-gradient(135deg, #8B1A27 0%, #E85520 50%, #3D0C11 100%)',
           }}>
-            {/* Overlay sombre pour lisibilité */}
             <div style={{ position: 'absolute', inset: 0, background: hasLogo ? 'linear-gradient(to top, rgba(0,0,0,.75) 0%, rgba(0,0,0,.35) 100%)' : 'linear-gradient(135deg, rgba(0,0,0,.2) 0%, rgba(0,0,0,.05) 100%)' }}></div>
-            {/* Déco fond si pas de logo */}
             {!hasLogo && <div style={{ position: 'absolute', right: -20, top: -20, fontSize: 110, opacity: .08, pointerEvents: 'none' }}>🍽️</div>}
-            {/* Contenu */}
             <div style={{ position: 'absolute', inset: 0, padding: '20px 20px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,.7)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 4 }}>Tableau de bord</div>
               <div style={{ fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.2, textShadow: '0 2px 8px rgba(0,0,0,.3)' }}>{restaurant?.nom}</div>
@@ -507,7 +526,6 @@ export default function DashboardPage() {
           <div onClick={resetCmdManuelle} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
           <div style={{ position: 'relative', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
 
-            {/* Header modal */}
             <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
               <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
             </div>
@@ -523,7 +541,6 @@ export default function DashboardPage() {
               <button onClick={resetCmdManuelle} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
             </div>
 
-            {/* Étape 1 : Table */}
             {cmdStep === 'table' && (
               <div style={{ overflowY: 'auto', padding: '14px 18px 30px' }}>
                 <div style={{ fontSize: 12, color: C.gray, marginBottom: 12 }}>Sélectionnez la table pour cette commande</div>
@@ -541,10 +558,8 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Étape 2 : Menu */}
             {cmdStep === 'menu' && (
               <>
-                {/* Catégories */}
                 <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 18px 0' }}>
                   {categories.map(cat => (
                     <button key={cat.id} onClick={() => setActiveCat(cat.id)}
@@ -554,7 +569,6 @@ export default function DashboardPage() {
                   ))}
                 </div>
 
-                {/* Plats */}
                 <div style={{ overflowY: 'auto', flex: 1, padding: '12px 18px' }}>
                   {plats.filter(p => p.categorie_id === activeCat).map(plat => (
                     <div key={plat.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
@@ -579,7 +593,6 @@ export default function DashboardPage() {
                   ))}
                 </div>
 
-                {/* Footer panier */}
                 {countPanier > 0 && (
                   <div style={{ padding: '12px 18px 30px', borderTop: `1px solid ${C.border}` }}>
                     <button onClick={() => setCmdStep('confirm')}
@@ -595,7 +608,6 @@ export default function DashboardPage() {
               </>
             )}
 
-            {/* Étape 3 : Confirmation */}
             {cmdStep === 'confirm' && (
               <div style={{ overflowY: 'auto', padding: '14px 18px 30px' }}>
                 <div style={{ background: C.grayLight, borderRadius: 14, padding: '14px', marginBottom: 14 }}>
@@ -649,7 +661,6 @@ export default function DashboardPage() {
               <div style={{ fontSize: 52, marginBottom: 16 }}>{step.icon}</div>
               <div style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 10 }}>{step.title}</div>
               <div style={{ fontSize: 13, color: C.gray, lineHeight: 1.6, marginBottom: 24 }}>{step.desc}</div>
-              {/* Indicateur progression */}
               <div style={{ display: 'flex', justifyContent: 'center', gap: 7, marginBottom: 24 }}>
                 {steps.map((_, i) => (
                   <div key={i} style={{ width: i === onboardingStep ? 20 : 8, height: 8, borderRadius: 4, background: i === onboardingStep ? C.primary : C.border, transition: 'all .3s' }}></div>
@@ -669,6 +680,23 @@ export default function DashboardPage() {
           </div>
         )
       })()}
+
+      {/* ── MODAL INSTRUCTIONS iOS ──────────────────────────────────── */}
+      {showIOSInstructions && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }} onClick={() => setShowIOSInstructions(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, padding: '24px', maxWidth: 380, width: '100%' }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#8B1A27', marginBottom: 12 }}>Installer MaquisApp sur iPhone</h3>
+            <ol style={{ fontSize: 14, color: '#333', lineHeight: 1.6, paddingLeft: 20 }}>
+              <li style={{ marginBottom: 8 }}>Appuyez sur le bouton <strong>Partager</strong> en bas de Safari (icône avec une flèche vers le haut)</li>
+              <li style={{ marginBottom: 8 }}>Faites défiler et appuyez sur <strong>Sur l'écran d'accueil</strong></li>
+              <li>Appuyez sur <strong>Ajouter</strong> en haut à droite</li>
+            </ol>
+            <button onClick={() => setShowIOSInstructions(false)} style={{ marginTop: 16, width: '100%', background: '#8B1A27', color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              OK, j'ai compris
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

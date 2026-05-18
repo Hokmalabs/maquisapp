@@ -27,6 +27,8 @@ export default function CuisinePage({ params }) {
   const [now, setNow] = useState(new Date())
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showInstallBtn, setShowInstallBtn] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+  const [showIOSInstructions, setShowIOSInstructions] = useState(false)
 
   useEffect(() => {
     if (!restaurantId) return
@@ -37,7 +39,32 @@ export default function CuisinePage({ params }) {
   }, [restaurantId])
 
   useEffect(() => {
-    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); setShowInstallBtn(true) }
+    const isInstalled = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+    if (isInstalled) return
+
+    // Détecter iOS Safari (pas de beforeinstallprompt)
+    const ua = window.navigator.userAgent.toLowerCase()
+    const iOS = /iphone|ipad|ipod/.test(ua) && !window.MSStream
+    const isSafari = /safari/.test(ua) && !/chrome|crios|fxios/.test(ua)
+    if (iOS && isSafari) {
+      setIsIOS(true)
+      setShowInstallBtn(true)
+      return
+    }
+
+    // Récupérer l'event capturé tôt (avant hydration React)
+    if (window.__installPrompt) {
+      setInstallPrompt(window.__installPrompt)
+      setShowInstallBtn(true)
+      return
+    }
+
+    const handler = (e) => {
+      e.preventDefault()
+      window.__installPrompt = e
+      setInstallPrompt(e)
+      setShowInstallBtn(true)
+    }
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
@@ -105,7 +132,19 @@ export default function CuisinePage({ params }) {
         <div style={{ marginBottom: 12, background: 'rgba(255,107,53,.15)', border: '1px solid rgba(255,107,53,.4)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#8B1A27' }}>📲 Installer sur l'écran d'accueil</span>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button onClick={async () => { if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null) } setShowInstallBtn(false) }}
+            <button onClick={async () => {
+              if (isIOS) {
+                setShowIOSInstructions(true)
+                return
+              }
+              if (installPrompt) {
+                await installPrompt.prompt()
+                setInstallPrompt(null)
+                setShowInstallBtn(false)
+              } else {
+                alert("L'installation n'est pas encore disponible. Rafraîchissez la page et réessayez.")
+              }
+            }}
               style={{ background: '#8B1A27', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
               Installer
             </button>
@@ -172,6 +211,23 @@ export default function CuisinePage({ params }) {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── MODAL INSTRUCTIONS iOS ──────────────────────────────────── */}
+      {showIOSInstructions && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }} onClick={() => setShowIOSInstructions(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, padding: '24px', maxWidth: 380, width: '100%' }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#8B1A27', marginBottom: 12 }}>Installer MaquisApp sur iPhone</h3>
+            <ol style={{ fontSize: 14, color: '#333', lineHeight: 1.6, paddingLeft: 20 }}>
+              <li style={{ marginBottom: 8 }}>Appuyez sur le bouton <strong>Partager</strong> en bas de Safari (icône avec une flèche vers le haut)</li>
+              <li style={{ marginBottom: 8 }}>Faites défiler et appuyez sur <strong>Sur l'écran d'accueil</strong></li>
+              <li>Appuyez sur <strong>Ajouter</strong> en haut à droite</li>
+            </ol>
+            <button onClick={() => setShowIOSInstructions(false)} style={{ marginTop: 16, width: '100%', background: '#8B1A27', color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              OK, j'ai compris
+            </button>
+          </div>
         </div>
       )}
     </div>
