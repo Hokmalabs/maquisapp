@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json()
     const { phone, indicatif, code, prenom, nom, ville, restaurant_nom } = body
-
+    const villeFinal = ville || 'Abidjan'
     if (!phone || !/^[0-9]{10}$/.test(phone)) {
       return new Response(
         JSON.stringify({ success: false, error: 'Numéro de téléphone invalide (10 chiffres requis)' }),
@@ -163,7 +163,7 @@ Deno.serve(async (req) => {
     }
 
     // CAS B — Nouveau user → INSCRIPTION
-    if (!prenom || !nom || !ville || !restaurant_nom) {
+    if (!nom || !restaurant_nom) {
       return new Response(
         JSON.stringify({
           success: false,
