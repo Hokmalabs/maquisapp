@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -9,8 +9,12 @@ const C = {
   green: '#00C851', yellow: '#FFB800', red: '#FF3B30', shadow: 'rgba(0,0,0,0.07)',
 }
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 export default function StockPage() {
   const router = useRouter()
+  const [userId, setUserId] = useState(null)
   const [restaurantId, setRestaurantId] = useState(null)
   const [boissons, setBoissons] = useState([])
   const [loading, setLoading] = useState(true)
@@ -18,11 +22,20 @@ export default function StockPage() {
   const [filtre, setFiltre] = useState('tout')
   const [ajustLoading, setAjustLoading] = useState(null)
 
+  // ── Mode admin (verrouillage réappro) ─────────────────────────────────
+  const [adminMode, setAdminMode] = useState(false)
+  const [showPinModal, setShowPinModal] = useState(false)
+  const [pinInput, setPinInput] = useState(['', '', '', ''])
+  const [pinError, setPinError] = useState('')
+  const [pinLoading, setPinLoading] = useState(false)
+  const pinRefs = useRef([])
+
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/auth/login'); return }
+    setUserId(user.id)
     const { data: profile } = await supabase.from('profiles').select('restaurant_id').eq('id', user.id).single()
     if (!profile) { router.push('/auth/login'); return }
     setRestaurantId(profile.restaurant_id)
@@ -48,6 +61,10 @@ export default function StockPage() {
   }
 
   async function reapprovisionner(plat) {
+    if (!adminMode) {
+      alert('Veuillez activer le mode admin pour réapprovisionner.')
+      return
+    }
     const val = prompt(`Réapprovisionner "${plat.nom}"\nNouveau stock :`, plat.stock_actuel || 0)
     if (val === null) return
     const n = parseInt(val)
@@ -60,6 +77,80 @@ export default function StockPage() {
     const nv = !plat.stock_actif
     await supabase.from('plats').update({ stock_actif: nv }).eq('id', plat.id)
     setBoissons(prev => prev.map(p => p.id === plat.id ? { ...p, stock_actif: nv } : p))
+  }
+
+  // ── PIN admin ─────────────────────────────────────────────────────────
+  function openPinModal() {
+    setPinInput(['', '', '', ''])
+    setPinError('')
+    setShowPinModal(true)
+    setTimeout(() => pinRefs.current[0]?.focus(), 100)
+  }
+
+  function closePinModal() {
+    setShowPinModal(false)
+    setPinInput(['', '', '', ''])
+    setPinError('')
+  }
+
+  function handlePinChange(index, value) {
+    if (!/^[0-9]?$/.test(value)) return
+    const newPin = [...pinInput]
+    newPin[index] = value
+    setPinInput(newPin)
+    setPinError('')
+
+    if (value && index < 3) {
+      pinRefs.current[index + 1]?.focus()
+    }
+
+    // Auto-submit quand 4 chiffres saisis
+    if (index === 3 && value && newPin.every(c => c !== '')) {
+      verifyAdminPin(newPin.join(''))
+    }
+  }
+
+  function handlePinKeyDown(index, e) {
+    if (e.key === 'Backspace' && !pinInput[index] && index > 0) {
+      pinRefs.current[index - 1]?.focus()
+    }
+  }
+
+  async function verifyAdminPin(pinStr) {
+    if (!userId) return
+    setPinLoading(true)
+    setPinError('')
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/verify-admin-pin`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId, pin: pinStr }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setAdminMode(true)
+        closePinModal()
+      } else {
+        setPinError(data.error || 'Code incorrect')
+        setPinInput(['', '', '', ''])
+        setTimeout(() => pinRefs.current[0]?.focus(), 100)
+      }
+    } catch (err) {
+      setPinError('Erreur réseau, réessayez')
+      setPinInput(['', '', '', ''])
+    } finally {
+      setPinLoading(false)
+    }
+  }
+
+  function verrouillerMode() {
+    setAdminMode(false)
   }
 
   const boissonsFiltrees = boissons.filter(b => {
@@ -99,6 +190,8 @@ export default function StockPage() {
         ::-webkit-scrollbar { display: none; }
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.08)} }
         @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
         .btn:active { transform: scale(0.96); }
       `}</style>
 
@@ -111,6 +204,35 @@ export default function StockPage() {
             <div style={{ color: '#aaa', fontSize: 11 }}>{stats.actif} boisson{stats.actif !== 1 ? 's' : ''} suivies</div>
           </div>
         </div>
+      </div>
+
+      {/* BOUTON MODE ADMIN */}
+      <div style={{ margin: '14px 16px 0' }}>
+        {!adminMode ? (
+          <button onClick={openPinModal}
+            style={{ width: '100%', background: 'linear-gradient(135deg, #FFF8E1, #FFE0B2)', border: '1.5px solid #FFB800', borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18 }}>🔒</span>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#7A5C00' }}>Mode admin verrouillé</div>
+                <div style={{ fontSize: 11, color: '#A07700', marginTop: 1 }}>Saisir PIN pour réapprovisionner</div>
+              </div>
+            </div>
+            <span style={{ fontSize: 18, color: '#7A5C00' }}>›</span>
+          </button>
+        ) : (
+          <button onClick={verrouillerMode}
+            style={{ width: '100%', background: 'linear-gradient(135deg, #E8F5E9, #C8E6C9)', border: `1.5px solid ${C.green}`, borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18 }}>🔓</span>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1B5E20' }}>Mode admin actif</div>
+                <div style={{ fontSize: 11, color: '#2E7D32', marginTop: 1 }}>Vous pouvez réapprovisionner — Touchez pour verrouiller</div>
+              </div>
+            </div>
+            <span style={{ fontSize: 14, color: '#1B5E20', fontWeight: 700 }}>🔒</span>
+          </button>
+        )}
       </div>
 
       {/* STAT CARDS */}
@@ -197,9 +319,9 @@ export default function StockPage() {
                     <button className="btn" onClick={() => ajusterStock(b, 1)} disabled={ajustLoading !== null}
                       style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: C.primary, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
                   </div>
-                  <button className="btn" onClick={() => reapprovisionner(b)}
-                    style={{ background: C.primaryLight, border: 'none', borderRadius: 10, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: C.primary, cursor: 'pointer', fontFamily: 'inherit' }}>
-                    📦 Réappro.
+                  <button className="btn" onClick={() => reapprovisionner(b)} disabled={!adminMode}
+                    style={{ background: adminMode ? C.primaryLight : C.grayLight, border: 'none', borderRadius: 10, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: adminMode ? C.primary : C.gray, cursor: adminMode ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: adminMode ? 1 : 0.6 }}>
+                    {adminMode ? '📦 Réappro.' : '🔒 Réappro.'}
                   </button>
                 </div>
               )}
@@ -225,6 +347,58 @@ export default function StockPage() {
           </button>
         ))}
       </div>
+
+      {/* MODAL PIN ADMIN */}
+      {showPinModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px', animation: 'fadeIn .2s' }} onClick={closePinModal}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, padding: '28px 24px', maxWidth: 360, width: '100%', animation: 'slideUp .3s ease' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>🔐</div>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 6 }}>Mode admin</h3>
+              <p style={{ fontSize: 13, color: C.gray }}>Saisissez votre code à 4 chiffres pour déverrouiller la réapprovisionnement</p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 14, animation: pinError ? 'shake .3s' : 'none' }}>
+              {pinInput.map((digit, i) => (
+                <input
+                  key={i}
+                  ref={el => pinRefs.current[i] = el}
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={1}
+                  value={digit}
+                  onChange={e => handlePinChange(i, e.target.value)}
+                  onKeyDown={e => handlePinKeyDown(i, e)}
+                  disabled={pinLoading}
+                  style={{
+                    width: 54, height: 64, textAlign: 'center', fontSize: 26, fontWeight: 800,
+                    border: `2px solid ${pinError ? C.red : digit ? C.primary : C.border}`,
+                    borderRadius: 12, outline: 'none', background: C.white, color: C.dark,
+                    fontFamily: 'inherit'
+                  }}
+                />
+              ))}
+            </div>
+
+            {pinError && (
+              <div style={{ textAlign: 'center', color: C.red, fontSize: 12, fontWeight: 600, marginBottom: 14 }}>
+                ⚠️ {pinError}
+              </div>
+            )}
+
+            {pinLoading && (
+              <div style={{ textAlign: 'center', color: C.primary, fontSize: 12, fontWeight: 600, marginBottom: 14 }}>
+                Vérification...
+              </div>
+            )}
+
+            <button onClick={closePinModal} disabled={pinLoading}
+              style={{ width: '100%', background: C.grayLight, color: C.dark, border: 'none', borderRadius: 12, padding: '12px', fontSize: 13, fontWeight: 700, cursor: pinLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: pinLoading ? 0.6 : 1 }}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
