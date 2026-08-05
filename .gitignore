@@ -40,3 +40,8 @@ supabase/.branches/
 # Backups SQL
 backup-*.sql
 *.dump
+
+# Secrets locaux
+_secrets/
+.env.local
+
