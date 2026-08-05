@@ -45,3 +45,6 @@ backup-*.sql
 _secrets/
 .env.local
 
+# Fichiers de debug temporaires
+_debug_*.txt
+
