@@ -6,6 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const TRIAL_DAYS = 14
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildPhoneE164(phone: string, indicatif: string): string {
@@ -182,7 +184,7 @@ Deno.serve(async (req) => {
       phone_confirm: true,
       email:         syntheticEmail,
       email_confirm: true,
-      user_metadata: { prenom, nom, ville },
+      user_metadata: { prenom, nom, ville: villeFinal },
     })
 
     if (createUserErr || !newUserData?.user) {
@@ -201,7 +203,15 @@ Deno.serve(async (req) => {
 
     const { data: restaurant, error: restoErr } = await supabaseAdmin
       .from('restaurants')
-      .insert({ nom: restaurant_nom, slug })
+      .insert({
+        nom:                restaurant_nom,
+        slug,
+        email:              syntheticEmail,
+        ville:              villeFinal,
+        abonnement_statut:  'essai',
+        abonnement_fin:     new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+        abonnement_plan:    null,
+      })
       .select('id')
       .single()
 
@@ -226,7 +236,7 @@ Deno.serve(async (req) => {
         prenom,
         role:          'gerant',
         phone:         phoneE164,
-        ville,
+        ville:         villeFinal,
       })
 
     if (profileErr) {
