@@ -21,13 +21,22 @@ export default function ParametresPage() {
   const [activeSection, setActiveSection] = useState('restaurant')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [hasPin, setHasPin] = useState(false)
+  const [showPinModal, setShowPinModal] = useState(false)
+  const [pinForm, setPinForm] = useState({ currentPin: '', newPin: '', confirmPin: '' })
+  const [pinSaving, setPinSaving] = useState(false)
+  const [pinError, setPinError] = useState('')
+  const [pinSuccess, setPinSuccess] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/auth/login'); return }
-    const { data: prof } = await supabase.from('profiles').select('*, restaurants(*)').eq('id', user.id).single()
+    const { data: prof } = await supabase.from('profiles')
+      .select('id, nom, prenom, restaurant_id, role, restaurants(id, nom, email, telephone, ville, slug)')
+      .eq('id', user.id)
+      .single()
     if (!prof) { router.push('/auth/login'); return }
     setProfile(prof)
     setRestaurant(prof.restaurants)
@@ -39,7 +48,60 @@ export default function ParametresPage() {
       slug: prof.restaurants?.slug || '',
     })
     setProfileForm({ nom: prof.nom || '', prenom: prof.prenom || '' })
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.access_token) {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/pin-status`, {
+          headers: { Authorization: `Bearer ${session.access_token}`, apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY },
+        })
+        if (response.ok) {
+          const result = await response.json()
+          setHasPin(result.hasPin === true)
+        }
+      } catch { setHasPin(false) }
+    }
     setLoading(false)
+  }
+
+  function updatePinField(field, value) {
+    setPinForm(previous => ({ ...previous, [field]: value.replace(/\D/g, '').slice(0, 4) }))
+    setPinError('')
+  }
+
+  function closePinModal() {
+    if (pinSaving) return
+    setShowPinModal(false)
+    setPinForm({ currentPin: '', newPin: '', confirmPin: '' })
+    setPinError('')
+  }
+
+  async function changePin(event) {
+    event.preventDefault()
+    if (pinSaving) return
+    if (!/^\d{4}$/.test(pinForm.currentPin) || !/^\d{4}$/.test(pinForm.newPin) || !/^\d{4}$/.test(pinForm.confirmPin)) {
+      setPinError('Chaque code PIN doit contenir exactement 4 chiffres.'); return
+    }
+    if (pinForm.newPin !== pinForm.confirmPin) { setPinError('La confirmation du nouveau code PIN ne correspond pas.'); return }
+    if (pinForm.currentPin === pinForm.newPin) { setPinError('Le nouveau code PIN doit être différent de l’ancien.'); return }
+    setPinSaving(true)
+    setPinError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Votre session a expiré. Veuillez vous reconnecter.')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/change-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY },
+        body: JSON.stringify(pinForm),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.message || 'Le code PIN n’a pas pu être modifié.')
+      setShowPinModal(false)
+      setPinForm({ currentPin: '', newPin: '', confirmPin: '' })
+      setPinSuccess(true)
+      setTimeout(() => setPinSuccess(false), 4000)
+    } catch (error) {
+      setPinError(error instanceof Error ? error.message : 'Le code PIN n’a pas pu être modifié.')
+    } finally { setPinSaving(false) }
   }
 
   async function saveRestaurant() {
@@ -249,6 +311,11 @@ export default function ParametresPage() {
         {/* ── SECTION COMPTE ─────────────────────────────────────────── */}
         {activeSection === 'compte' && (
           <div>
+            {pinSuccess && (
+              <div style={{ background: '#E8F5E9', color: C.green, borderRadius: 12, padding: '11px 14px', fontSize: 12, fontWeight: 700, marginBottom: 14 }}>
+                ✓ Code PIN modifié avec succès
+              </div>
+            )}
             {/* Infos compte */}
             <div style={{ background: C.white, borderRadius: 18, padding: '18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 14 }}>Informations du compte</div>
@@ -265,11 +332,11 @@ export default function ParametresPage() {
             {/* Actions compte */}
             <div style={{ background: C.white, borderRadius: 18, padding: '8px 18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14 }}>
               {[
-                { label: 'Changer le mot de passe', icon: '🔑', color: C.dark, action: () => {} },
+                ...(hasPin ? [{ label: 'Changer le code PIN', icon: '🔑', color: C.dark, action: () => setShowPinModal(true) }] : []),
                 { label: 'Exporter mes données', icon: '📥', color: C.dark, action: () => {} },
               ].map((item, i) => (
                 <button key={i} onClick={item.action}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', background: 'none', border: 'none', cursor: 'pointer', borderBottom: i === 0 ? `1px solid ${C.border}` : 'none', fontFamily: 'inherit' }}>
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', background: 'none', border: 'none', cursor: 'pointer', borderBottom: hasPin && i === 0 ? `1px solid ${C.border}` : 'none', fontFamily: 'inherit' }}>
                   <span style={{ fontSize: 20 }}>{item.icon}</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: item.color, flex: 1, textAlign: 'left' }}>{item.label}</span>
                   <span style={{ color: C.gray, fontSize: 16 }}>›</span>
@@ -303,6 +370,37 @@ export default function ParametresPage() {
           </button>
         ))}
       </div>
+
+      {showPinModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
+          <div onClick={closePinModal} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
+          <form onSubmit={changePin} style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', padding: '24px 20px 40px', animation: 'slideUp .3s ease' }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: C.dark, marginBottom: 6 }}>Changer le code PIN</div>
+            <div style={{ fontSize: 12, color: C.gray, marginBottom: 20 }}>Saisissez votre code actuel, puis choisissez un nouveau code à 4 chiffres.</div>
+            {[
+              { key: 'currentPin', label: 'Code PIN actuel', autoComplete: 'current-password' },
+              { key: 'newPin', label: 'Nouveau code PIN', autoComplete: 'new-password' },
+              { key: 'confirmPin', label: 'Confirmer le nouveau code PIN', autoComplete: 'new-password' },
+            ].map(field => (
+              <label key={field.key} style={{ display: 'block', marginBottom: 13 }}>
+                <span style={{ display: 'block', fontSize: 11, color: C.gray, fontWeight: 600, marginBottom: 5 }}>{field.label}</span>
+                <input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4} autoComplete={field.autoComplete}
+                  value={pinForm[field.key]} onChange={event => updatePinField(field.key, event.target.value)}
+                  style={{ width: '100%', padding: '12px 13px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontSize: 18, letterSpacing: 6, outline: 'none', fontFamily: 'inherit', color: C.dark }} />
+              </label>
+            ))}
+            {pinError && <div role="alert" style={{ background: '#FFEBEE', color: C.red, borderRadius: 10, padding: '10px 12px', fontSize: 12, marginBottom: 14 }}>{pinError}</div>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={closePinModal} disabled={pinSaving}
+                style={{ flex: 1, background: C.grayLight, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>Annuler</button>
+              <button type="submit" disabled={pinSaving}
+                style={{ flex: 1, background: C.primary, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: pinSaving ? .7 : 1 }}>
+                {pinSaving ? 'Modification...' : 'Modifier'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* CONFIRM LOGOUT */}
       {showLogoutConfirm && (

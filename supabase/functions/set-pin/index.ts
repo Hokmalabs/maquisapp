@@ -7,91 +7,70 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const json = (body: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+Deno.serve(async (request) => {
+  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (request.method !== 'POST') return json({ success: false, error: 'Méthode non autorisée' }, 405)
+
+  const accessToken = request.headers.get('Authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]
+  if (!accessToken) return json({ success: false, error: 'Authentification requise' }, 401)
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+    return json({ success: false, error: 'Service temporairement indisponible' }, 500)
   }
 
+  const authClient = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { data: { user }, error: authError } = await authClient.auth.getUser(accessToken)
+  if (authError || !user) return json({ success: false, error: 'Session invalide ou expirée' }, 401)
+
+  let payload: { pin?: unknown; confirmPin?: unknown }
   try {
-    const { userId, pin, confirmPin } = await req.json()
-
-    // ── Validation ────────────────────────────────────────────────────────────
-    if (!userId || !UUID_RE.test(userId)) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Identifiant utilisateur invalide' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    if (!pin || !/^[0-9]{4}$/.test(pin)) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Le code doit contenir exactement 4 chiffres' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    if (confirmPin !== pin) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Les codes ne correspondent pas' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    )
-
-    // ── Vérifier que le profil existe ─────────────────────────────────────────
-    const { data: profile, error: profileErr } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle()
-
-    if (profileErr) {
-      console.error('[set-pin] Erreur lecture profil:', profileErr)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Erreur serveur' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    if (!profile) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Compte introuvable' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // ── Hash + enregistrement ─────────────────────────────────────────────────
-    const pinHash = bcrypt.hashSync(pin, bcrypt.genSaltSync(10))
-    console.log(`[set-pin] Hash PIN pour userId: ${userId}`)
-
-    const { error: updateErr } = await supabaseAdmin
-      .from('profiles')
-      .update({ pin_hash: pinHash, pin_attempts: 0, pin_locked_until: null })
-      .eq('id', userId)
-
-    if (updateErr) {
-      console.error('[set-pin] Erreur update profil:', updateErr)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Erreur enregistrement du code' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    console.log(`[set-pin] Code défini avec succès pour userId: ${userId}`)
-    return new Response(
-      JSON.stringify({ success: true, message: 'Code créé avec succès' }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-
-  } catch (err) {
-    console.error('[set-pin] Exception:', err)
-    return new Response(
-      JSON.stringify({ success: false, error: 'Erreur serveur' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    payload = await request.json()
+  } catch {
+    return json({ success: false, error: 'Requête invalide' }, 400)
   }
+
+  const { pin, confirmPin } = payload
+  if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {
+    return json({ success: false, error: 'Le code doit contenir exactement 4 chiffres' }, 400)
+  }
+  if (confirmPin !== pin) {
+    return json({ success: false, error: 'Les codes ne correspondent pas' }, 400)
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('id, pin_hash')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profileError) return json({ success: false, error: 'Impossible de vérifier le profil' }, 500)
+  if (!profile) return json({ success: false, error: 'Compte introuvable' }, 404)
+  if (profile.pin_hash) {
+    return json({ success: false, error: 'Un code PIN est déjà configuré pour ce compte' }, 409)
+  }
+
+  const pinHash = bcrypt.hashSync(pin, bcrypt.genSaltSync(10))
+  const { data: updatedProfile, error: updateError } = await supabaseAdmin
+    .from('profiles')
+    .update({ pin_hash: pinHash, pin_attempts: 0, pin_locked_until: null })
+    .eq('id', user.id)
+    .select('id')
+    .maybeSingle()
+  if (updateError || !updatedProfile) {
+    return json({ success: false, error: 'Erreur lors de l’enregistrement du code' }, 500)
+  }
+  return json({ success: true, message: 'Code créé avec succès' })
 })

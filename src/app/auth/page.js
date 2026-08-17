@@ -368,10 +368,19 @@ function AuthPageContent() {
     if (pinStr !== confirmStr) { setError('Les codes ne correspondent pas, vérifiez'); return }
     setLoading(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setError('Votre session a expiré. Veuillez recommencer l’inscription ou vous reconnecter.')
+        return
+      }
       const res  = await fetch(`${SUPABASE_URL}/functions/v1/set-pin`, {
         method:  'POST',
-        headers: { 'Authorization': `Bearer ${ANON_KEY}`, 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ userId: savedUserId, pin: pinStr, confirmPin: confirmStr }),
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pin: pinStr, confirmPin: confirmStr }),
       })
       const data = await res.json()
       if (data.success) {

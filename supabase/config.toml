@@ -469,6 +469,18 @@ import_map = "./functions/verify-admin-pin/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/verify-admin-pin/index.ts"
+
+[functions.change-pin]
+enabled = true
+verify_jwt = true
+import_map = "./functions/change-pin/deno.json"
+entrypoint = "./functions/change-pin/index.ts"
+
+[functions.pin-status]
+enabled = true
+verify_jwt = true
+import_map = "./functions/pin-status/deno.json"
+entrypoint = "./functions/pin-status/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/verify-admin-pin/*.html" ]

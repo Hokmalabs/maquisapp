@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "reset-client-pin": "node scripts/reset-client-pin.cjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.47.0",

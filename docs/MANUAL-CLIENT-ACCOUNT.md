@@ -336,3 +336,17 @@ Lorsque Twilio dispose de nouveau de crédit et fonctionne normalement, le parco
 La création manuelle doit rester une procédure exceptionnelle et administrative.
 
 Le parcours d’inscription OTP normal reste le mécanisme standard pour les créations de comptes effectuées directement par les clients.
+
+## Réinitialiser localement le code PIN d’un client
+
+Cette opération d’administration est exclusivement locale. Elle utilise la clé `service_role` pour cibler exactement un profil par numéro de téléphone, remplacer son hash bcrypt et remettre à zéro le verrouillage.
+
+Définir temporairement `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLIENT_PHONE` et `CLIENT_PIN`, puis exécuter :
+
+```bash
+npm run reset-client-pin
+```
+
+`CLIENT_PIN` doit contenir exactement quatre chiffres. `CLIENT_PHONE` accepte le format ivoirien à 10 chiffres ou le format E.164. Le script s’arrête sans écrire si aucun profil ou plusieurs profils correspondent.
+
+Ne jamais coller la clé `service_role` ou le code PIN dans un chat, une capture, un fichier versionné ou des logs. Supprimer les variables temporaires du terminal après l’opération.
