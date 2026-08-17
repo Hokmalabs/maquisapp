@@ -73,7 +73,6 @@ export default function DashboardPage() {
     if (window.__installPrompt) {
       setInstallPrompt(window.__installPrompt)
       setShowInstallBtn(true)
-      return
     }
 
     const handler = (e) => {
@@ -82,8 +81,17 @@ export default function DashboardPage() {
       setInstallPrompt(e)
       setShowInstallBtn(true)
     }
-    window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
+      const installedHandler = () => {
+        window.__installPrompt = null
+        setInstallPrompt(null)
+        setShowInstallBtn(false)
+      }
+      window.addEventListener('beforeinstallprompt', handler)
+      window.addEventListener('appinstalled', installedHandler)
+      return () => {
+        window.removeEventListener('beforeinstallprompt', handler)
+        window.removeEventListener('appinstalled', installedHandler)
+      }
   }, [])
 
   // Realtime commandes
@@ -341,6 +349,7 @@ export default function DashboardPage() {
               if (installPrompt) {
                 await installPrompt.prompt()
                 setInstallPrompt(null)
+                  window.__installPrompt = null
                 setShowInstallBtn(false)
               } else {
                 alert("L'installation n'est pas encore disponible. Rafraîchissez la page et réessayez.")
