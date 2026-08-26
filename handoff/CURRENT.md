@@ -1,128 +1,93 @@
 # État actuel — MaquisApp
 
-**Session en cours :** Reprise après ~3 mois de pause + documentation complète
+**Dernière session :** Assainissement des fondations + fix expiration essai +
+isolation du chantier multi-resto
 
 ---
 
 ## Contexte de la session
 
-Joel Yemian reprend MaquisApp après une longue pause. Cette session a servi à :
+Reprise du projet après une période où le travail a avancé avec un autre outil
+(chantier multi-resto entamé). Cette session a servi à assainir les fondations
+et remettre le dépôt dans un état sain.
 
-1. Vérifier l'accès au compte super_admin
-2. **Découvrir et remédier un incident de sécurité** : la mémoire de l'agent
-   contenait des secrets (PIN, userId, project ref, numéros perso) qui ont été
-   restitués en clair dans le chat. Décision de nettoyer la mémoire et de
-   changer le PIN.
-3. Créer une documentation complète du projet (ce dossier + `docs/`)
-4. Préparer un handoff propre pour les prochaines sessions
+## Ce qui a été fait
 
----
+### Fondations de versionnement (assainies pour la première fois)
+- Baseline schéma versionnée : le schéma réel de la prod (8 tables, FK vérifiées,
+  RLS + 21 policies, 4 fonctions, 3 triggers) était non tracé. Capturé dans
+  `supabase/migrations/20260805_baseline_schema.sql`.
+- Historique de migrations réconcilié : `20260520`, `20260805`, `20260805120000`
+  marqués `applied` via `supabase migration repair`.
+- Capture faite via requêtes SQL Studio (Docker indisponible, `db pull`/`db dump`
+  écartés).
 
-## Où en est le produit ?
+### Bug corrigé : expiration des essais (inscription téléphone)
+- Cause : le flow `verify-otp` (CAS B) créait les restaurants sans `abonnement_fin`,
+  contrairement au flow Google → essais éternels.
+- Fix : `verify-otp` pose désormais email, ville, `abonnement_statut='essai'`,
+  `abonnement_fin=+14j`, `abonnement_plan=null` (constante `TRIAL_DAYS=14`).
+  Déployé en prod, validé sur compte test.
+- Rattrapage : 8 comptes "essai éternel" régularisés via migration
+  `20260805120000_rattrapage_essais_sans_fin.sql`.
 
-- **Prod live** : https://www.maquisapp.com
-- **Dernière session code** : mai 2026
-- **Nombre de clients** : à vérifier au démarrage de session
-- **Bugs récents connus** : voir NEXT.md (cluster tickets/tables, bouton
-  "changer PIN" non fonctionnel)
+### Nettoyage
+- Compte fantôme "Restaurant de Ruyan" supprimé (ligne restaurants orpheline).
+- Procédure de suppression de compte clarifiée : supprimer `restaurants` d'abord
+  (cascade vers profil/données), puis `auth.users` dans Studio. Jamais l'inverse.
+- Fichiers `_debug_*.txt` supprimés, `.gitignore` renforcé.
 
----
-
-## Chantiers immédiats
-
-### 1. Bug urgent en cours
-
-Un bug urgent a été mentionné juste avant la fin de session mais **n'a pas
-été précisé**. À expliciter dès le début de la prochaine conversation.
-
-### 2. Refonte du portail admin (chantier principal)
-
-Objectif : transformer `src/app/admin/page.js` (simple liste) en un vrai
-dashboard super_admin avec sidebar, menus (Restaurants, Utilisateurs, Revenus,
-Abonnements, Support, Logs), et métriques clés (MRR, restos actifs, alertes).
-
-Détails et décisions à prendre : voir NEXT.md.
-
----
-
-## Actions de sécurité effectuées
-
-- Ajout de 3 règles persistantes dans la mémoire user Claude :
-  1. Ne jamais afficher de secret en clair dans le chat
-  2. Exclure définitivement PIN, userId, project ref, numéros perso
-  3. Pour retrouver des accès, rediriger vers Supabase Studio directement
-- Documentation `SECURITY.md` créée
-- Documentation `SECRETS.md` créée (indique OÙ sont les secrets, jamais QUOI)
-
-## Actions de sécurité à effectuer par Joel (checklist)
-
-- [ ] Vérifier que `_secrets/` est bien dans `.gitignore`
-- [ ] Changer le PIN via Supabase SQL Editor ou via l'app
-- [ ] Supprimer la conversation Claude qui contenait les secrets en clair
-- [ ] Ouvrir une nouvelle conversation avec le prompt de continuation
-  (voir plus bas)
+### Isolation du chantier multi-resto
+- Le travail multi-resto (memberships, RLS, onboarding) avait été committé
+  directement sur `main` en local, non pushé, hors workflow.
+- Isolé sur la branche `feature/multi-resto` (6 commits). `main` et `develop`
+  remis à l'état prod (`32f70f0`).
+- Chantier GELÉ : à reprendre après les sprints actuels.
 
 ---
 
-## Prompt de continuation pour la prochaine conversation
+## État du dépôt
 
-Copier-coller au démarrage de la nouvelle conversation Claude :
-
-```
-Salut Claude, je suis Joel Yemian, fondateur de Hokma Labs et de MaquisApp
-(SaaS de gestion de restaurant pour le marché ivoirien).
-
-Je reprends après une pause. Pour te mettre en contexte rapidement :
-
-1. Lis dans l'ordre :
-   - CLAUDE.md (racine) — règles absolues
-   - handoff/CURRENT.md — état de session actuel
-   - handoff/NEXT.md — backlog priorisé
-   - docs/README.md — index de la doc
-
-2. Après lecture, résume-moi en 5 lignes max :
-   - Ce qui a été fait à la dernière session
-   - Ce qui doit être attaqué en priorité
-   - Les règles de collaboration que tu vas respecter
-
-3. J'ai un bug urgent que je vais te décrire. On le traite AVANT tout autre
-   chantier.
-
-4. Une fois le bug fixé, on attaque la refonte du portail admin
-   (voir section "Chantier en cours" dans NEXT.md).
-
-Règles absolues à respecter (rappelées dans CLAUDE.md) :
-- Jamais de secret en clair dans le chat
-- Toujours travailler sur branche `develop`, jamais `main` direct
-- Pour du code > 50 lignes, livrer le fichier complet
-- Être direct, tranché, proactif
-
-Confirme-moi que tu as bien lu les fichiers, puis on démarre par le bug urgent.
-```
+- `develop` = `main` = `origin/main` = `32f70f0` (état prod)
+- `feature/multi-resto` = `a945b9d` (6 commits au-dessus, chantier gelé)
+- Working tree clean
 
 ---
 
-## Notes de session
+## Chantiers EN PAUSE
 
-- Documentation créée : 4 fichiers `docs/*.md` (README, ARCHITECTURE, DESIGN_SYSTEM,
-  DATABASE, SECURITY, DEPLOYMENT, ONBOARDING) + 5 ADR
-- Handoff créés : 4 fichiers `handoff/*.md` (CURRENT, NEXT, CHANGELOG, SECRETS)
-- Fichiers racine créés : `CLAUDE.md`, `AGENT.md`
-- Update `.gitignore` : ajout `_secrets/` si absent
+- **Refonte back-office admin** : maquette de structure validée (sidebar +
+  sous-routes : Vue d'ensemble, Restaurants, Abonnements, Revenus, Utilisateurs,
+  Support, Logs ; priorité au cycle de vie abonnement). À reprendre plus tard.
+- **Multi-resto** : gelé sur `feature/multi-resto`.
 
 ---
 
-## Statut Git au moment du handoff
+## Prochain chantier : 2 retours terrain (resto "L'Assiette Savoureuse de PM")
 
-- Branche : `develop` (à vérifier avec `git status`)
-- Fichiers créés à commiter :
-  - `CLAUDE.md`
-  - `AGENT.md`
-  - `docs/` (tous les fichiers)
-  - `handoff/` (tous les fichiers)
-  - `.gitignore` (si modifié)
+### Retour 1 — Regroupement dans l'Historique
+Les commandes multiples d'une même table sont regroupées dans l'écran "Commandes"
+mais réapparaissent éclatées ligne par ligne dans "Historique" après encaissement.
+Objectif : regrouper l'historique par table/session comme l'écran Commandes.
+- Pas de `session_id` en base ; les commandes d'une table ne sont liées que par
+  `table_id`. L'écran Commandes regroupe en mémoire (fonction `grouperParTable`).
+  Appliquer la même logique à l'historique (grouper les clôturées par table + temps).
 
-Commit suggéré :
-```
-docs: bootstrap documentation projet (CLAUDE.md, AGENT.md, docs/, handoff/)
-```
+### Retour 2 — Rapport de ventes par article
+Le resto veut les quantités vendues par article sur une période (ex : 15 Beaufort,
+5 poulet), avec quantité + montant, et idéalement un graphique du top des ventes.
+- Agrégation sur `commande_items` (SUM quantite, GROUP BY nom_plat, filtré période).
+  Pur ajout, lecture seule, aucun risque.
+
+### ⚠️ Cause commune (dette à corriger)
+L'écran Historique (`src/app/dashboard/historique/page.js`) lit `commandes.total`
+directement, au lieu de dériver depuis `commande_items` — interdit par CLAUDE.md.
+L'écran Commandes recalcule bien depuis `commande_items` avant clôture (fonction
+`ouvrirGroupe`), pas l'Historique. Les deux retours se traitent au même endroit.
+
+Fichiers clés :
+- `src/app/dashboard/historique/page.js` (413 l.) — requête L124-146, lit `commandes.total`
+- `src/app/dashboard/commandes/page.js` — clôture : `changerStatut`, `cloturerTout`, `ouvrirGroupe`
+- `src/app/dashboard/page.js` — commande manuelle : `envoyerCmdManuelle` L250-267, `grouperParTable`
+
+Ordre proposé : Retour 2 d'abord (simple, sans risque), puis Retour 1.
