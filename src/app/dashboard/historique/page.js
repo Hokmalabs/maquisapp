@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
+import { deriverTotalCommande, indexerItemsParCommande, grouperSessions } from '../../../lib/ventes';
 
 const C = {
   bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
@@ -21,6 +22,13 @@ const MODES = [
 
 function getMode(id) {
   return MODES.find(m => m.id === id) || { label: id || 'Non spécifié', icon: '❓', color: '#8A8A9A' };
+}
+
+// Résout l'affichage mode paiement d'une session (peut contenir plusieurs commandes/modes).
+function getModeSession(session) {
+  if (!session.modes || session.modes.length === 0) return { label: 'Non spécifié', icon: '❓', color: '#8A8A9A' };
+  if (session.modes.length === 1) return getMode(session.modes[0]);
+  return { label: 'Mixte', icon: '🔀', color: C.gray };
 }
 
 const PERIODS = [
@@ -71,7 +79,7 @@ function BarChart({ data }) {
   );
 }
 
-function exportCSV(commandes, tables) {
+function exportCSV(commandes, tables, itemsParCmd) {
   const rows = [['Date', 'Heure', 'Table', 'Total (FCFA)', 'Mode paiement', 'Statut']];
   commandes.forEach(c => {
     const t = tables.find(x => x.id === c.table_id);
@@ -80,13 +88,13 @@ function exportCSV(commandes, tables) {
       dt.toLocaleDateString('fr-CI'),
       dt.toLocaleTimeString('fr-CI', { hour: '2-digit', minute: '2-digit' }),
       `Table ${t?.numero || '?'}`,
-      c.total || 0,
+      deriverTotalCommande(itemsParCmd[c.id]),
       c.mode_paiement || '—',
       c.statut,
     ]);
   });
   const csv = rows.map(r => r.join(';')).join('\n');
-  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = `maquisapp_historique_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
@@ -98,14 +106,14 @@ export default function HistoriquePage() {
   const [restaurant, setRestaurant] = useState(null);
   const [tables, setTables]         = useState([]);
   const [commandes, setCommandes]   = useState([]);
+  const [itemsParCmd, setItemsParCmd] = useState({});
   const [loading, setLoading]       = useState(true);
   const [period, setPeriod]         = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo]     = useState('');
   const [showCustom, setShowCustom] = useState(false);
   const [filterMode, setFilterMode] = useState('all'); // filtre par mode paiement
-  const [showDetail, setShowDetail] = useState(null);  // commande sélectionnée
-  const [detailItems, setDetailItems] = useState([]);
+  const [showDetail, setShowDetail] = useState(null);  // session sélectionnée
 
   useEffect(() => {
     (async () => {
@@ -123,25 +131,30 @@ export default function HistoriquePage() {
 
   useEffect(() => {
     if (!restaurant) return;
-    const { from, to } = getPeriodRange(period, customFrom, customTo);
-    supabase.from('commandes')
-      .select('*')
-      .eq('restaurant_id', restaurant.id)
-      .eq('statut', 'cloture')
-      .gte('created_at', from + 'T00:00:00')
-      .lte('created_at', to + 'T23:59:59')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => setCommandes(data || []));
+    (async () => {
+      const { from, to } = getPeriodRange(period, customFrom, customTo);
+      const { data: cmds } = await supabase.from('commandes')
+        .select('id, table_id, mode_paiement, created_at, statut')
+        .eq('restaurant_id', restaurant.id)
+        .eq('statut', 'cloture')
+        .gte('created_at', from + 'T00:00:00')
+        .lte('created_at', to + 'T23:59:59')
+        .order('created_at', { ascending: false });
+
+      const cmdsList = cmds || [];
+      const ids = cmdsList.map(c => c.id);
+      let items = [];
+      if (ids.length > 0) {
+        const { data } = await supabase.from('commande_items').select('*').in('commande_id', ids);
+        items = data || [];
+      }
+      setCommandes(cmdsList);
+      setItemsParCmd(indexerItemsParCommande(items));
+    })();
   }, [restaurant, period, customFrom, customTo]);
 
-  async function ouvrirDetail(cmd) {
-    setShowDetail(cmd);
-    const { data } = await supabase.from('commande_items').select('*').eq('commande_id', cmd.id);
-    setDetailItems(data || []);
-  }
-
-  // ── Stats ──────────────────────────────────────────────────────────────────
-  const ca = commandes.reduce((s, c) => s + (c.total || 0), 0);
+  // ── Stats (toutes dérivées de commande_items) ────────────────────────────────
+  const ca = commandes.reduce((s, c) => s + deriverTotalCommande(itemsParCmd[c.id]), 0);
   const nbCommandes = commandes.length;
   const panierMoyen = nbCommandes > 0 ? ca / nbCommandes : 0;
 
@@ -149,16 +162,17 @@ export default function HistoriquePage() {
   const totauxParMode = {};
   commandes.forEach(c => {
     const m = c.mode_paiement || 'non_specifie';
+    const montant = deriverTotalCommande(itemsParCmd[c.id]);
     if (!totauxParMode[m]) totauxParMode[m] = { count: 0, total: 0 };
     totauxParMode[m].count++;
-    totauxParMode[m].total += c.total || 0;
+    totauxParMode[m].total += montant;
   });
 
   // Bar chart
   const byDay = {};
   commandes.forEach(c => {
     const d = c.created_at.slice(0, 10);
-    byDay[d] = (byDay[d] || 0) + (c.total || 0);
+    byDay[d] = (byDay[d] || 0) + deriverTotalCommande(itemsParCmd[c.id]);
   });
   const { from, to } = getPeriodRange(period, customFrom, customTo);
   const chartData = [];
@@ -169,10 +183,12 @@ export default function HistoriquePage() {
     cur.setDate(cur.getDate() + 1);
   }
 
-  // Filtre mode paiement
+  // Filtre mode paiement (appliqué AVANT le regroupement en sessions)
   const commandesFiltrees = filterMode === 'all'
     ? commandes
     : commandes.filter(c => (c.mode_paiement || 'non_specifie') === filterMode);
+
+  const sessions = grouperSessions(commandesFiltrees, itemsParCmd, 3);
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
@@ -204,7 +220,7 @@ export default function HistoriquePage() {
               <div style={{ color: '#aaa', fontSize: 11 }}>{restaurant?.nom}</div>
             </div>
           </div>
-          <button className="btn" onClick={() => exportCSV(commandes, tables)}
+          <button className="btn" onClick={() => exportCSV(commandes, tables, itemsParCmd)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,.2)', background: 'transparent', color: C.white, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             ⬇️ CSV
           </button>
@@ -241,6 +257,17 @@ export default function HistoriquePage() {
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)' }}>{nbCommandes} commande{nbCommandes !== 1 ? 's' : ''} clôturée{nbCommandes !== 1 ? 's' : ''}</div>
           {chartData.length > 1 && <div style={{ marginTop: 14 }}><BarChart data={chartData} /></div>}
         </div>
+
+        {/* ACCÈS VENTES PAR ARTICLE */}
+        <button className="btn" onClick={() => router.push('/dashboard/historique/articles')}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.white, borderRadius: 16, padding: '14px 16px', boxShadow: `0 2px 8px ${C.shadow}`, border: 'none', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'left' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📊</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>Ventes par article</div>
+            <div style={{ fontSize: 11, color: C.gray }}>Top des articles les plus vendus</div>
+          </div>
+          <span style={{ fontSize: 16, color: C.gray }}>›</span>
+        </button>
 
         {/* KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -292,12 +319,12 @@ export default function HistoriquePage() {
           </div>
         )}
 
-        {/* FILTRE PAR MODE + LISTE */}
+        {/* FILTRE PAR MODE + LISTE DES SESSIONS */}
         <div style={{ background: C.white, borderRadius: 18, boxShadow: `0 2px 10px ${C.shadow}`, overflow: 'hidden' }}>
           <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Détail</div>
-              <span style={{ fontSize: 11, color: C.gray }}>{commandesFiltrees.length} entrée{commandesFiltrees.length !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: 11, color: C.gray }}>{sessions.length} entrée{sessions.length !== 1 ? 's' : ''}</span>
             </div>
             {/* Chips filtre mode */}
             <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
@@ -318,26 +345,35 @@ export default function HistoriquePage() {
             </div>
           </div>
 
-          {commandesFiltrees.length === 0 ? (
+          {sessions.length === 0 ? (
             <div style={{ padding: 32, textAlign: 'center', color: C.gray, fontSize: 13 }}>
               <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
               Aucune commande sur cette période
             </div>
           ) : (
             <div>
-              {commandesFiltrees.map((c, i) => {
-                const t = tables.find(x => x.id === c.table_id);
-                const cfg = getMode(c.mode_paiement || 'non_specifie');
+              {sessions.map((s, i) => {
+                const t = tables.find(x => x.id === s.tableId);
+                const cfg = getModeSession(s);
                 return (
-                  <div key={c.id} className="row-cmd" onClick={() => ouvrirDetail(c)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: i < commandesFiltrees.length - 1 ? `1px solid ${C.border}` : 'none', cursor: 'pointer', transition: 'background .15s' }}>
+                  <div key={`${s.tableId}-${s.debut}`} className="row-cmd" onClick={() => setShowDetail(s)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: i < sessions.length - 1 ? `1px solid ${C.border}` : 'none', cursor: 'pointer', transition: 'background .15s' }}>
                     <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{cfg.icon}</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>Table {t?.numero || '?'}</div>
-                      <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>{fmtDate(c.created_at)} · {fmtTime(c.created_at)} · {cfg.label}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        Table {t?.numero || '?'}
+                        {s.nbCommandes > 1 && (
+                          <span style={{ fontSize: 9, fontWeight: 700, color: C.primary, background: C.primaryLight, borderRadius: 20, padding: '2px 6px' }}>
+                            {s.nbCommandes} commandes
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>
+                        {fmtDate(s.fin)} · {fmtTime(s.debut)}{s.nbCommandes > 1 ? `–${fmtTime(s.fin)}` : ''} · {cfg.label}
+                      </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{fmtCFA(c.total)}</div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{fmtCFA(s.total)}</div>
                       <div style={{ fontSize: 10, color: C.gray, marginTop: 1 }}>›</div>
                     </div>
                   </div>
@@ -366,10 +402,10 @@ export default function HistoriquePage() {
         ))}
       </div>
 
-      {/* MODAL DÉTAIL COMMANDE */}
+      {/* MODAL DÉTAIL SESSION */}
       {showDetail && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
-          <div onClick={() => { setShowDetail(null); setDetailItems([]); }} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
+          <div onClick={() => setShowDetail(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
           <div style={{ position: 'relative', width: '100%', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '80vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
               <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
@@ -377,30 +413,48 @@ export default function HistoriquePage() {
             <div style={{ padding: '10px 18px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: C.dark }}>
-                  Table {tables.find(t => t.id === showDetail.table_id)?.numero || '?'}
+                  Table {tables.find(t => t.id === showDetail.tableId)?.numero || '?'}
                 </div>
                 <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>
-                  {fmtDate(showDetail.created_at)} · {fmtTime(showDetail.created_at)}
+                  {fmtDate(showDetail.fin)} · {fmtTime(showDetail.debut)}{showDetail.nbCommandes > 1 ? `–${fmtTime(showDetail.fin)}` : ''}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <div style={{ background: getMode(showDetail.mode_paiement || 'non_specifie').color + '18', color: getMode(showDetail.mode_paiement || 'non_specifie').color, borderRadius: 20, padding: '4px 10px', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span>{getMode(showDetail.mode_paiement || 'non_specifie').icon}</span>
-                  {getMode(showDetail.mode_paiement || 'non_specifie').label}
+                <div style={{ background: getModeSession(showDetail).color + '18', color: getModeSession(showDetail).color, borderRadius: 20, padding: '4px 10px', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span>{getModeSession(showDetail).icon}</span>
+                  {getModeSession(showDetail).label}
                 </div>
-                <button onClick={() => { setShowDetail(null); setDetailItems([]); }} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                <button onClick={() => setShowDetail(null)} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
               </div>
             </div>
             <div style={{ overflowY: 'auto', flex: 1, padding: '10px 18px' }}>
-              {detailItems.map(item => (
-                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{item.nom_plat}</div>
-                    <div style={{ fontSize: 11, color: C.gray }}>×{item.quantite} · {item.prix_unitaire.toLocaleString()} F/u</div>
+              {showDetail.cmds.map(cmd => {
+                const items = itemsParCmd[cmd.id] || [];
+                return (
+                  <div key={cmd.id} style={{ marginBottom: 14 }}>
+                    {showDetail.nbCommandes > 1 && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.gray, textTransform: 'uppercase', letterSpacing: .5, margin: '10px 0 6px' }}>
+                        Commande {fmtTime(cmd.created_at)}
+                      </div>
+                    )}
+                    {items.map(item => (
+                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{item.nom_plat}</div>
+                          <div style={{ fontSize: 11, color: C.gray }}>×{item.quantite} · {Number(item.prix_unitaire).toLocaleString()} F/u</div>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>{(Number(item.prix_unitaire) * Number(item.quantite)).toLocaleString()} F</div>
+                      </div>
+                    ))}
+                    {showDetail.nbCommandes > 1 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0' }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: C.gray }}>Sous-total</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.dark }}>{fmtCFA(deriverTotalCommande(items))}</span>
+                      </div>
+                    )}
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>{(item.prix_unitaire * item.quantite).toLocaleString()} F</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div style={{ padding: '12px 18px 36px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Total</span>
