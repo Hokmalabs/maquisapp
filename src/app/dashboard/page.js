@@ -284,7 +284,7 @@ export default function DashboardPage() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
+    <div className="dash-root" style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -295,10 +295,19 @@ export default function DashboardPage() {
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
         .nav-btn:active { transform: scale(0.93); }
         .card-btn:active { transform: scale(0.97); }
+
+        @media (min-width: 900px) {
+          .dash-root { max-width: 1180px !important; margin: 0 !important; padding: 24px 28px 40px !important; }
+          .dash-header { display: none !important; }
+          .dash-bottomnav { display: none !important; }
+          .dash-navgrid { display: none !important; }
+          .dash-stats { grid-template-columns: repeat(4, 1fr) !important; }
+          .dash-stat-ca { grid-column: span 1 !important; }
+        }
       `}</style>
 
       {/* ── HEADER ───────────────────────────────────────────────────── */}
-      <div style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
+      <div className="dash-header" style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {restaurant?.logo_url
@@ -410,8 +419,8 @@ export default function DashboardPage() {
       })()}
 
       {/* ── STATS ────────────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '14px 16px 0' }}>
-        <div style={{ background: C.white, borderRadius: 18, padding: '18px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="dash-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '14px 16px 0' }}>
+        <div className="dash-stat-ca" style={{ background: C.white, borderRadius: 18, padding: '18px', boxShadow: '0 4px 20px rgba(0,0,0,.09)', gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 11, color: C.gray, marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .6 }}>CA du jour</div>
             <div style={{ fontSize: 30, fontWeight: 800, color: C.primary, letterSpacing: -.5 }}>{formatCFA(stats.ca_jour)}</div>
@@ -481,7 +490,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── NAVIGATION GRID ──────────────────────────────────────────── */}
-      <div style={{ margin: '20px 16px 0' }}>
+      <div className="dash-navgrid" style={{ margin: '20px 16px 0' }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 12 }}>Navigation</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
@@ -512,7 +521,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── BOTTOM NAV ───────────────────────────────────────────────── */}
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="dash-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {[
           { icon: '🏠', label: 'Accueil', path: '/dashboard', active: true },
           { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
