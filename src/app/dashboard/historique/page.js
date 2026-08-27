@@ -134,7 +134,7 @@ export default function HistoriquePage() {
     (async () => {
       const { from, to } = getPeriodRange(period, customFrom, customTo);
       const { data: cmds } = await supabase.from('commandes')
-        .select('id, table_id, mode_paiement, created_at, statut')
+        .select('id, table_id, mode_paiement, created_at, statut, cloture_id')
         .eq('restaurant_id', restaurant.id)
         .eq('statut', 'cloture')
         .gte('created_at', from + 'T00:00:00')
@@ -188,7 +188,7 @@ export default function HistoriquePage() {
     ? commandes
     : commandes.filter(c => (c.mode_paiement || 'non_specifie') === filterMode);
 
-  const sessions = grouperSessions(commandesFiltrees, itemsParCmd, 3);
+  const sessions = grouperSessions(commandesFiltrees, itemsParCmd);
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>

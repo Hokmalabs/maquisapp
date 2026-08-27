@@ -42,54 +42,33 @@ export function agregerParArticle(items) {
   });
 }
 
-// Regroupe les commandes d'une même table en sessions (repas) : deux commandes
-// consécutives de la même table appartiennent à la même session si l'écart entre
-// elles est <= seuilHeures, sinon une nouvelle session démarre.
-export function grouperSessions(commandes, itemsParCmd, seuilHeures = 3) {
+// Regroupe les commandes en sessions (repas) par encaissement réel : les commandes
+// partageant le même cloture_id (clôturées ensemble) forment une session ; une
+// commande sans cloture_id (clôturée avant l'introduction de ce tampon, ou hors
+// flux de clôture groupée) forme sa propre session solo.
+export function grouperSessions(commandes, itemsParCmd) {
   if (!commandes || commandes.length === 0) return [];
 
-  const seuilMs = seuilHeures * 60 * 60 * 1000;
-
-  // Grouper par table_id
-  const parTable = {};
+  // Grouper par clé d'encaissement : cloture_id si présent, sinon clé solo par commande.
+  const parCle = {};
   for (const c of commandes) {
-    const tid = c.table_id;
-    if (!parTable[tid]) parTable[tid] = [];
-    parTable[tid].push(c);
+    const cle = c.cloture_id != null ? c.cloture_id : `solo:${c.id}`;
+    if (!parCle[cle]) parCle[cle] = [];
+    parCle[cle].push(c);
   }
 
-  const sessions = [];
-  for (const tableId of Object.keys(parTable)) {
-    const cmds = [...parTable[tableId]].sort(
-      (a, b) => new Date(a.created_at) - new Date(b.created_at)
-    );
-
-    let sessionCourante = null;
-    let prevDate = null;
-
-    for (const cmd of cmds) {
-      const curDate = new Date(cmd.created_at);
-      const ouvrirNouvelle =
-        !sessionCourante || curDate - prevDate > seuilMs;
-
-      if (ouvrirNouvelle) {
-        sessionCourante = { tableId, cmds: [] };
-        sessions.push(sessionCourante);
-      }
-      sessionCourante.cmds.push(cmd);
-      prevDate = curDate;
-    }
-  }
-
-  return sessions
-    .map(({ tableId, cmds }) => {
+  return Object.values(parCle)
+    .map((groupe) => {
+      const cmds = [...groupe].sort(
+        (a, b) => new Date(a.created_at) - new Date(b.created_at)
+      );
       const total = cmds.reduce(
         (sum, c) => sum + deriverTotalCommande(itemsParCmd[c.id]),
         0
       );
       const modes = [...new Set(cmds.map((c) => c.mode_paiement).filter(Boolean))];
       return {
-        tableId,
+        tableId: cmds[0].table_id,
         cmds,
         total,
         nbCommandes: cmds.length,

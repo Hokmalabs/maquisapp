@@ -251,6 +251,7 @@ export default function CommandesPage() {
 
   async function cloturerTout(group, modePaiement) {
     if (!modePaiement) return false
+    const clotureId = crypto.randomUUID()
     console.log('[cloturerTout] Début — modePaiement:', modePaiement, '| cmds:', group.cmds.map(c => c.id))
     setUpdating(true)
     try {
@@ -259,7 +260,7 @@ export default function CommandesPage() {
       for (const cmd of group.cmds) {
         if (!['cloture', 'annule'].includes(cmd.statut)) {
           const { data, error } = await supabase.from('commandes')
-            .update({ statut: 'cloture', mode_paiement: modePaiement, paye: true })
+            .update({ statut: 'cloture', mode_paiement: modePaiement, paye: true, cloture_id: clotureId })
             .eq('id', cmd.id)
             .select()
           if (error) {
