@@ -5,6 +5,31 @@ Format : entrées par date de fin de session, groupées par thème.
 
 ---
 
+## Session — Chantier retours terrain (rapport articles, historique fiabilisé, cloture_id)
+
+### Rapport de ventes par article (Retour 2)
+- Nouveau `src/lib/ventes.js` : fonctions pures dérivant les totaux depuis
+  `commande_items` (deriverTotalCommande, indexerItemsParCommande, agregerParArticle,
+  grouperSessions). Source de vérité unique, conforme ADR 004.
+- Nouvelle page `src/app/dashboard/historique/articles/page.js` : quantités et montants
+  vendus par article sur une période, top ventes en barres horizontales maison. Lecture seule.
+
+### Historique fiabilisé (Retour 1 + dette ADR 004)
+- `historique/page.js` réécrit : tous les montants dérivés de `commande_items`, plus
+  aucune lecture de `commandes.total` (cache client non fiable).
+- Liste "Détail" regroupée par session au lieu d'être éclatée ligne par ligne.
+
+### Regroupement déterministe par encaissement
+- Migration `20260827140301_add_cloture_id.sql` : `commandes.cloture_id` (uuid nullable,
+  index, pas de backfill). Appliquée manuellement dans Supabase Studio.
+- `cloturerTout` pose un `cloture_id` commun sur toutes les commandes d'un même
+  encaissement ; `grouperSessions` regroupe par ce tampon (solo si NULL). Fini le
+  regroupement par seuil temporel, qui fusionnait à tort deux clients successifs d'une
+  même table.
+- Note migration : appliquée via Studio (Docker indisponible), fichier versionné dans le repo.
+
+---
+
 ## Session — Assainissement fondations + fix expiration essai + isolation multi-resto
 
 ### Fondations de versionnement

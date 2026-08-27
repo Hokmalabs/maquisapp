@@ -1,93 +1,86 @@
 # État actuel — MaquisApp
 
-**Dernière session :** Assainissement des fondations + fix expiration essai +
-isolation du chantier multi-resto
+**Dernière session :** Chantier retours terrain (resto "L'Assiette Savoureuse de PM")
+clos — rapport ventes par article, historique fiabilisé, regroupement par encaissement.
 
 ---
 
-## Contexte de la session
+## Ce qui a été fait cette session
 
-Reprise du projet après une période où le travail a avancé avec un autre outil
-(chantier multi-resto entamé). Cette session a servi à assainir les fondations
-et remettre le dépôt dans un état sain.
+### Chantier "retours terrain" — 3 commits sur develop
 
-## Ce qui a été fait
+**Commit 1 — Rapport de ventes par article (Retour 2)**
+- Nouveau module `src/lib/ventes.js` : fonctions pures de dérivation des totaux depuis
+  `commande_items` (source de vérité unique, conforme ADR 004) :
+  `deriverTotalCommande`, `indexerItemsParCommande`, `agregerParArticle`, `grouperSessions`.
+- Nouvelle page `src/app/dashboard/historique/articles/page.js` : rapport ventes par
+  article (quantités + montants agrégés sur `commande_items`, top ventes en barres
+  horizontales maison, zéro dépendance). Lecture seule.
 
-### Fondations de versionnement (assainies pour la première fois)
-- Baseline schéma versionnée : le schéma réel de la prod (8 tables, FK vérifiées,
-  RLS + 21 policies, 4 fonctions, 3 triggers) était non tracé. Capturé dans
-  `supabase/migrations/20260805_baseline_schema.sql`.
-- Historique de migrations réconcilié : `20260520`, `20260805`, `20260805120000`
-  marqués `applied` via `supabase migration repair`.
-- Capture faite via requêtes SQL Studio (Docker indisponible, `db pull`/`db dump`
-  écartés).
+**Commit 2 — Historique fiabilisé + regroupement par session (Retour 1)**
+- `src/app/dashboard/historique/page.js` réécrit : tous les montants (CA, panier moyen,
+  encaissements par mode, bar chart, liste, modal, CSV) dérivés de `commande_items`.
+  Plus aucune lecture de `commandes.total`.
+- Liste "Détail" regroupée par session de table au lieu d'être éclatée ligne par ligne.
 
-### Bug corrigé : expiration des essais (inscription téléphone)
-- Cause : le flow `verify-otp` (CAS B) créait les restaurants sans `abonnement_fin`,
-  contrairement au flow Google → essais éternels.
-- Fix : `verify-otp` pose désormais email, ville, `abonnement_statut='essai'`,
-  `abonnement_fin=+14j`, `abonnement_plan=null` (constante `TRIAL_DAYS=14`).
-  Déployé en prod, validé sur compte test.
-- Rattrapage : 8 comptes "essai éternel" régularisés via migration
-  `20260805120000_rattrapage_essais_sans_fin.sql`.
-
-### Nettoyage
-- Compte fantôme "Restaurant de Ruyan" supprimé (ligne restaurants orpheline).
-- Procédure de suppression de compte clarifiée : supprimer `restaurants` d'abord
-  (cascade vers profil/données), puis `auth.users` dans Studio. Jamais l'inverse.
-- Fichiers `_debug_*.txt` supprimés, `.gitignore` renforcé.
-
-### Isolation du chantier multi-resto
-- Le travail multi-resto (memberships, RLS, onboarding) avait été committé
-  directement sur `main` en local, non pushé, hors workflow.
-- Isolé sur la branche `feature/multi-resto` (6 commits). `main` et `develop`
-  remis à l'état prod (`32f70f0`).
-- Chantier GELÉ : à reprendre après les sprints actuels.
+**Commit 3 — Regroupement déterministe par encaissement**
+- Constat terrain : regrouper par proximité temporelle est faux (deux clients successifs
+  sur la même table à < 3h étaient fusionnés). La bonne frontière = l'encaissement.
+- Migration `supabase/migrations/20260827140301_add_cloture_id.sql` : ajoute
+  `commandes.cloture_id` (uuid nullable, index, pas de backfill). **Appliquée à la main
+  dans Supabase Studio** (Docker indisponible). NULL = commande clôturée avant le tampon,
+  reste isolée dans l'historique.
+- `cloturerTout` (`src/app/dashboard/commandes/page.js`) génère un `cloture_id` unique par
+  encaissement et le pose sur toutes les commandes du groupe.
+- `grouperSessions` regroupe désormais par `cloture_id` (ou solo par commande si NULL),
+  plus aucune logique de seuil temporel.
+- Validé en preview : nouveaux encaissements groupés en une session, anciennes commandes
+  restées éclatées (comportement voulu).
 
 ---
 
 ## État du dépôt
 
-- `develop` = `main` = `origin/main` = `32f70f0` (état prod)
-- `feature/multi-resto` = `a945b9d` (6 commits au-dessus, chantier gelé)
-- Working tree clean
+- `develop` = 3 commits au-dessus de l'état prod précédent (retours terrain).
+- `main` = état prod, **pas encore mergé** (merge à décider par Joel).
+- Migration `cloture_id` déjà appliquée sur la base Supabase (partagée preview/prod),
+  opération non destructive.
+- `feature/multi-resto` = chantier multi-resto toujours gelé (6 commits).
+- Working tree clean.
+
+---
+
+## À décider
+
+- **Merge `develop` → `main`** : à faire quand Joel juge l'ensemble assez validé
+  (idéalement après test du resto en preview).
+
+---
+
+## Prochain chantier : Volet A — Débloquer l'usage sur PC desktop
+
+Le seul client actif utilise l'app sur un **PC de gestion non tactile**, alors qu'elle
+est conçue mobile-first strict (max-width 480px). Problèmes constatés :
+- Impossible de scroller horizontalement les catégories (> 10 catégories) sans écran tactile.
+- Affichage étriqué / peu adapté au desktop.
+
+Objectif du volet A (bloquant en prod pour ce client) :
+- Rendre le dashboard/commande manuelle utilisable au-delà de 480px (responsive desktop).
+- Régler le scroll des catégories (flèches, molette, ou wrap sur desktop).
+- Amorcer le passage des plats en cards cliquables avec boutons +/−.
+
+Volets B et C (à cadrer ENSUITE, ne pas démarrer avant A) :
+- **Volet B (schéma)** : supprimer la duplication intérieur/extérieur. Un article unique =
+  un seul stock, avec 1 à N tarifs nommés (résout le bug de stock boisson dupliqué).
+  Accompagnements gratuits cochables par article (pré-remplis à la création du resto,
+  modifiables en base — pas en dur). Supplément payant = article séparé (pas d'options
+  payantes). Nécessite une ADR + migration + bascule des données du client existant.
+- **Volet C (UI)** : cards cliquables → modal options (tarif + accompagnements) → panier.
+  Consomme le schéma du volet B.
 
 ---
 
 ## Chantiers EN PAUSE
 
-- **Refonte back-office admin** : maquette de structure validée (sidebar +
-  sous-routes : Vue d'ensemble, Restaurants, Abonnements, Revenus, Utilisateurs,
-  Support, Logs ; priorité au cycle de vie abonnement). À reprendre plus tard.
+- **Refonte back-office admin** : maquette validée (sidebar + sous-routes). À reprendre.
 - **Multi-resto** : gelé sur `feature/multi-resto`.
-
----
-
-## Prochain chantier : 2 retours terrain (resto "L'Assiette Savoureuse de PM")
-
-### Retour 1 — Regroupement dans l'Historique
-Les commandes multiples d'une même table sont regroupées dans l'écran "Commandes"
-mais réapparaissent éclatées ligne par ligne dans "Historique" après encaissement.
-Objectif : regrouper l'historique par table/session comme l'écran Commandes.
-- Pas de `session_id` en base ; les commandes d'une table ne sont liées que par
-  `table_id`. L'écran Commandes regroupe en mémoire (fonction `grouperParTable`).
-  Appliquer la même logique à l'historique (grouper les clôturées par table + temps).
-
-### Retour 2 — Rapport de ventes par article
-Le resto veut les quantités vendues par article sur une période (ex : 15 Beaufort,
-5 poulet), avec quantité + montant, et idéalement un graphique du top des ventes.
-- Agrégation sur `commande_items` (SUM quantite, GROUP BY nom_plat, filtré période).
-  Pur ajout, lecture seule, aucun risque.
-
-### ⚠️ Cause commune (dette à corriger)
-L'écran Historique (`src/app/dashboard/historique/page.js`) lit `commandes.total`
-directement, au lieu de dériver depuis `commande_items` — interdit par CLAUDE.md.
-L'écran Commandes recalcule bien depuis `commande_items` avant clôture (fonction
-`ouvrirGroupe`), pas l'Historique. Les deux retours se traitent au même endroit.
-
-Fichiers clés :
-- `src/app/dashboard/historique/page.js` (413 l.) — requête L124-146, lit `commandes.total`
-- `src/app/dashboard/commandes/page.js` — clôture : `changerStatut`, `cloturerTout`, `ouvrirGroupe`
-- `src/app/dashboard/page.js` — commande manuelle : `envoyerCmdManuelle` L250-267, `grouperParTable`
-
-Ordre proposé : Retour 2 d'abord (simple, sans risque), puis Retour 1.
