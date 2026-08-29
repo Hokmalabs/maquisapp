@@ -27,6 +27,7 @@ export default function MenuPage({ params }) {
   const [restaurant, setRestaurant]   = useState(null);
   const [categories, setCategories]   = useState([]);
   const [plats, setPlats]             = useState([]);
+  const [tarifsByPlat, setTarifsByPlat] = useState({}); // { plat_id: [{id, prix, ordre, actif}] } (ADR 006)
   const [table, setTable]             = useState(null);
   const [panier, setPanier]           = useState([]);
   const [commandes, setCommandes]     = useState([]);
@@ -69,6 +70,22 @@ export default function MenuPage({ params }) {
 
     const { data: pls } = await supabase.from('plats').select('*').eq('restaurant_id', resto.id).eq('disponible', true).order('ordre');
     setPlats(pls || []);
+
+    // Tarifs multiples (ADR 006) : chargés en une requête, indexés par plat_id.
+    // Le prix affiché au client dépend du tarif_ordre de la table scannée.
+    const platIds = (pls || []).map(p => p.id);
+    if (platIds.length) {
+      const { data: tarifs } = await supabase
+        .from('plat_tarifs').select('*').in('plat_id', platIds).order('ordre');
+      const map = {};
+      for (const t of (tarifs || [])) {
+        if (!map[t.plat_id]) map[t.plat_id] = [];
+        map[t.plat_id].push(t);
+      }
+      setTarifsByPlat(map);
+    } else {
+      setTarifsByPlat({});
+    }
 
     await loadCommandes(tableId);
     setLoading(false);
@@ -175,14 +192,27 @@ export default function MenuPage({ params }) {
     }
   }
 
+  // Résout le prix applicable à un plat pour la table scannée (ADR 006).
+  // Règle : tarif dont l'ordre == table.tarif_ordre ; à défaut, repli ordre 1 ;
+  // à défaut de tarifs (legacy), plat.prix. Retourne { prix, tarif_id }.
+  function resoudreTarif(plat) {
+    const ordreCible = table?.tarif_ordre || 1;
+    const list = (tarifsByPlat[plat.id] || []).filter(t => t.actif);
+    if (!list.length) return { prix: Number(plat.prix), tarif_id: null };
+    const exact = list.find(t => t.ordre === ordreCible);
+    const chosen = exact || list.find(t => t.ordre === 1) || list.slice().sort((a, b) => a.ordre - b.ordre)[0];
+    return { prix: Number(chosen.prix), tarif_id: chosen.id };
+  }
+
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0);
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0);
 
   function ajouterAuPanier(plat) {
+    const { prix, tarif_id } = resoudreTarif(plat);
     setPanier(prev => {
       const ex = prev.find(i => i.plat_id === plat.id);
       if (ex) return prev.map(i => i.plat_id === plat.id ? { ...i, quantite: i.quantite + 1 } : i);
-      return [...prev, { plat_id: plat.id, nom: plat.nom, prix: plat.prix, quantite: 1, note: '', image_url: plat.image_url }];
+      return [...prev, { plat_id: plat.id, nom: plat.nom, prix, tarif_id, quantite: 1, note: '', image_url: plat.image_url }];
     });
   }
 
@@ -199,12 +229,14 @@ export default function MenuPage({ params }) {
     return panier.find(i => i.plat_id === platId)?.quantite || 0;
   }
 
+  // ADR 004 : le vrai total est dérivé du snapshot commande_items.prix_unitaire,
+  // JAMAIS de plats.prix (qui ignorerait le tarif de la table appliqué à la commande).
   async function calculerVraiTotal(cmdId) {
     const { data: items } = await supabase
       .from('commande_items')
-      .select('quantite, plats(prix)')
+      .select('quantite, prix_unitaire')
       .eq('commande_id', cmdId);
-    return items?.reduce((s, i) => s + (i.plats.prix * i.quantite), 0) || 0;
+    return items?.reduce((s, i) => s + (i.prix_unitaire * i.quantite), 0) || 0;
   }
 
   async function envoyerCommande() {
@@ -218,7 +250,7 @@ export default function MenuPage({ params }) {
         .select().single();
       if (error || !cmd) return;
       await supabase.from('commande_items').insert(
-        panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, quantite: i.quantite, note: i.note || '' }))
+        panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, tarif_id: i.tarif_id || null, quantite: i.quantite, note: i.note || '' }))
       );
       const vraiTotal = await calculerVraiTotal(cmd.id);
       await supabase.from('commandes').update({ total: vraiTotal }).eq('id', cmd.id);
@@ -400,7 +432,7 @@ export default function MenuPage({ params }) {
               <div style={{ padding: '0 16px 10px', fontSize: 14, fontWeight: 700, color: C.dark }}>{cat.nom}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 16px' }}>
                 {cat.plats.map(plat => (
-                  <PlatCard key={plat.id} plat={plat} quantite={quantiteDans(plat.id)}
+                  <PlatCard key={plat.id} plat={plat} prix={resoudreTarif(plat).prix} quantite={quantiteDans(plat.id)}
                     onAdd={() => ajouterAuPanier(plat)} onRemove={() => retirerDuPanier(plat.id)} onClick={() => setPlatDetail(plat)} />
                 ))}
               </div>
@@ -411,7 +443,7 @@ export default function MenuPage({ params }) {
             <div style={{ fontSize: 13, color: C.gray, marginBottom: 12 }}>{platsFiltres.length} résultat{platsFiltres.length !== 1 ? 's' : ''}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {platsFiltres.map(plat => (
-                <PlatCard key={plat.id} plat={plat} quantite={quantiteDans(plat.id)}
+                <PlatCard key={plat.id} plat={plat} prix={resoudreTarif(plat).prix} quantite={quantiteDans(plat.id)}
                   onAdd={() => ajouterAuPanier(plat)} onRemove={() => retirerDuPanier(plat.id)} onClick={() => setPlatDetail(plat)} />
               ))}
             </div>
@@ -440,7 +472,7 @@ export default function MenuPage({ params }) {
           onCommander={envoyerCommande} sending={sending} />
       )}
       {platDetail && (
-        <ModalPlatDetail plat={platDetail} quantite={quantiteDans(platDetail.id)}
+        <ModalPlatDetail plat={platDetail} prix={resoudreTarif(platDetail).prix} quantite={quantiteDans(platDetail.id)}
           onClose={() => setPlatDetail(null)}
           onAdd={() => ajouterAuPanier(platDetail)}
           onRemove={() => retirerDuPanier(platDetail.id)} />
@@ -529,7 +561,7 @@ function ModalDetailCommande({ cmd, items, onClose }) {
   );
 }
 
-function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
+function PlatCard({ plat, prix, quantite, onAdd, onRemove, onClick }) {
   return (
     <div className="plat-card" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', cursor: 'pointer', transition: 'transform .15s' }} onClick={onClick}>
       {plat.image_url
@@ -542,7 +574,7 @@ function PlatCard({ plat, quantite, onAdd, onRemove, onClick }) {
           {plat.description && <div style={{ fontSize: 11, color: '#8A8A9A', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: '#FF6B35' }}>{plat.prix.toLocaleString()} F</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#FF6B35' }}>{Number(prix).toLocaleString()} F</div>
           <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             {quantite > 0 && (
               <>
@@ -606,7 +638,7 @@ function ModalPanier({ panier, total, plats, isNouvelle, onClose, onAdd, onRemov
   );
 }
 
-function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
+function ModalPlatDetail({ plat, prix, quantite, onClose, onAdd, onRemove }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
@@ -618,7 +650,7 @@ function ModalPlatDetail({ plat, quantite, onClose, onAdd, onRemove }) {
           <div style={{ fontSize: 18, fontWeight: 800, color: '#1A1A2E' }}>{plat.nom}</div>
           {plat.description && <div style={{ fontSize: 13, color: '#8A8A9A', marginTop: 7, lineHeight: 1.6 }}>{plat.description}</div>}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: '#FF6B35' }}>{plat.prix.toLocaleString()} FCFA</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#FF6B35' }}>{Number(prix).toLocaleString()} FCFA</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {quantite > 0 && <button onClick={onRemove} style={{ width: 36, height: 36, borderRadius: 9, border: '1.5px solid #E8E8F0', background: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>}
               {quantite > 0 && <span style={{ fontSize: 15, fontWeight: 700 }}>{quantite}</span>}
