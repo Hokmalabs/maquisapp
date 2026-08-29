@@ -2,6 +2,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
+import { deriverTotalCommande, indexerItemsParCommande } from '../../lib/ventes'
+
+const GrapheVentes = dynamic(() => import('./GrapheVentes'), { ssr: false, loading: () => <div style={{ height: 200 }} /> })
 
 const C = {
   bg: '#F5F5F5',
@@ -26,12 +30,17 @@ const STATUT_CONFIG = {
   servi:          { label: 'Servi',           color: '#00C851', bg: '#E8F5E9', icon: '🍽️' },
 }
 
+const JOURS_COURTS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
+
 export default function DashboardPage() {
   const router = useRouter()
   const [restaurant, setRestaurant] = useState(null)
   const [restaurantId, setRestaurantId] = useState(null)
   const [stats, setStats] = useState({ commandes: 0, tables: 0, plats: 0, ca_jour: 0 })
   const [commandes, setCommandes] = useState([])
+  const [graphData, setGraphData] = useState([])
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false)
+  const [dateStr, setDateStr] = useState('')
   const [loading, setLoading] = useState(true)
   const [showCmdManuelle, setShowCmdManuelle] = useState(false)
   const [avertissementExpiration, setAvertissementExpiration] = useState(null)
@@ -94,6 +103,24 @@ export default function DashboardPage() {
       }
   }, [])
 
+  // Détection viewport desktop — ne monte le graphe (recharts) que si ≥900px,
+  // pour ne jamais charger la lib côté mobile. Ne pilote aucun autre style
+  // (le reste du responsive reste géré en CSS pur via @media).
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 900px)')
+    const update = () => setIsDesktopViewport(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
+  // Date affichée dans le hero — calculée post-mount (client only) pour éviter
+  // un mismatch d'hydration si serveur et client sont de part et d'autre de minuit.
+  useEffect(() => {
+    const d = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+    setDateStr(d.charAt(0).toUpperCase() + d.slice(1))
+  }, [])
+
   // Realtime commandes
   useEffect(() => {
     if (!restaurantId) return
@@ -104,6 +131,48 @@ export default function DashboardPage() {
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [restaurantId])
+
+  // ADR 004 : le CA ne doit jamais être dérivé de commandes.total (peu fiable,
+  // calculé côté client) mais toujours de commande_items.
+  const caDepuisCommandeIds = async (ids) => {
+    if (!ids || ids.length === 0) return 0
+    const { data: items } = await supabase
+      .from('commande_items').select('commande_id, prix_unitaire, quantite').in('commande_id', ids)
+    const itemsParCommande = indexerItemsParCommande(items || [])
+    return ids.reduce((sum, id) => sum + deriverTotalCommande(itemsParCommande[id]), 0)
+  }
+
+  const loadGraphData = async (rid) => {
+    const debut = new Date()
+    debut.setDate(debut.getDate() - 6)
+    debut.setHours(0, 0, 0, 0)
+
+    const { data: cmds } = await supabase
+      .from('commandes')
+      .select('id, created_at')
+      .eq('restaurant_id', rid)
+      .eq('statut', 'cloture')
+      .gte('created_at', debut.toISOString())
+
+    const ids = (cmds || []).map(c => c.id)
+    let itemsParCommande = {}
+    if (ids.length) {
+      const { data: items } = await supabase
+        .from('commande_items').select('commande_id, prix_unitaire, quantite').in('commande_id', ids)
+      itemsParCommande = indexerItemsParCommande(items || [])
+    }
+
+    const jours = []
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const dateKey = d.toISOString().split('T')[0]
+      const cmdsDuJour = (cmds || []).filter(c => c.created_at.split('T')[0] === dateKey)
+      const ca = cmdsDuJour.reduce((sum, c) => sum + deriverTotalCommande(itemsParCommande[c.id]), 0)
+      jours.push({ jour: JOURS_COURTS[d.getDay()], ca, commandes: cmdsDuJour.length })
+    }
+    setGraphData(jours)
+  }
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -152,13 +221,13 @@ export default function DashboardPage() {
       supabase.from('tables').select('*', { count: 'exact', head: true }).eq('restaurant_id', rid).eq('actif', true),
       supabase.from('plats').select('*', { count: 'exact', head: true }).eq('restaurant_id', rid).eq('disponible', true),
       supabase.from('commandes').select('*, tables(numero)').eq('restaurant_id', rid).not('statut', 'in', '("cloture","annule")').order('created_at', { ascending: false }).limit(8),
-      supabase.from('commandes').select('total').eq('restaurant_id', rid).eq('statut', 'cloture').gte('created_at', today),
+      supabase.from('commandes').select('id').eq('restaurant_id', rid).eq('statut', 'cloture').gte('created_at', today),
       supabase.from('tables').select('*').eq('restaurant_id', rid).eq('actif', true).order('numero'),
       supabase.from('categories').select('*').eq('restaurant_id', rid).order('ordre'),
       supabase.from('plats').select('*').eq('restaurant_id', rid).eq('disponible', true).order('ordre'),
     ])
 
-    const caJour = cmdJour?.reduce((s, c) => s + (c.total || 0), 0) || 0
+    const caJour = await caDepuisCommandeIds((cmdJour || []).map(c => c.id))
     setStats({ commandes: cmdCount || 0, tables: tableCount || 0, plats: platCount || 0, ca_jour: caJour })
     setCommandes(cmdActives || [])
     setTables(tbls || [])
@@ -174,7 +243,7 @@ export default function DashboardPage() {
       setShowOnboarding(true)
     }
 
-    await checkStock(rid)
+    await Promise.all([checkStock(rid), loadGraphData(rid)])
     setLoading(false)
   }
 
@@ -193,12 +262,13 @@ export default function DashboardPage() {
     const today = new Date().toISOString().split('T')[0]
     const [{ data: cmdActives }, { data: cmdJour }, { count }] = await Promise.all([
       supabase.from('commandes').select('*, tables(numero)').eq('restaurant_id', rid).not('statut', 'in', '("cloture","annule")').order('created_at', { ascending: false }).limit(8),
-      supabase.from('commandes').select('total').eq('restaurant_id', rid).eq('statut', 'cloture').gte('created_at', today),
+      supabase.from('commandes').select('id').eq('restaurant_id', rid).eq('statut', 'cloture').gte('created_at', today),
       supabase.from('commandes').select('*', { count: 'exact', head: true }).eq('restaurant_id', rid).not('statut', 'in', '("cloture","annule")'),
     ])
     setCommandes(cmdActives || [])
-    const caJour = cmdJour?.reduce((s, c) => s + (c.total || 0), 0) || 0
+    const caJour = await caDepuisCommandeIds((cmdJour || []).map(c => c.id))
     setStats(prev => ({ ...prev, commandes: count || 0, ca_jour: caJour }))
+    loadGraphData(rid)
   }
 
   const handleLogout = async () => {
@@ -273,8 +343,6 @@ export default function DashboardPage() {
     setCmdStep('table')
   }
 
-  const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
-
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>🍽️</div>
@@ -286,7 +354,6 @@ export default function DashboardPage() {
   return (
     <div className="dash-root" style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { display: none; }
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.08)} }
@@ -295,6 +362,7 @@ export default function DashboardPage() {
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
         .nav-btn:active { transform: scale(0.93); }
         .card-btn:active { transform: scale(0.97); }
+        .dash-desktop-row { display: none; }
 
         @media (min-width: 900px) {
           .dash-root { max-width: 1180px !important; margin: 0 !important; padding: 24px 28px 40px !important; }
@@ -303,6 +371,8 @@ export default function DashboardPage() {
           .dash-navgrid { display: none !important; }
           .dash-stats { grid-template-columns: repeat(4, 1fr) !important; }
           .dash-stat-ca { grid-column: span 1 !important; }
+          .dash-desktop-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin: 16px 16px 0; }
+          .dash-panel { background: #fff; border-radius: 18px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,.09); }
         }
       `}</style>
 
@@ -395,7 +465,7 @@ export default function DashboardPage() {
             <div style={{ position: 'absolute', inset: 0, padding: '20px 20px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,.7)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 4 }}>Tableau de bord</div>
               <div style={{ fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.2, textShadow: '0 2px 8px rgba(0,0,0,.3)' }}>{restaurant?.nom}</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.75)', marginTop: 3 }}>{today.charAt(0).toUpperCase() + today.slice(1)}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.75)', marginTop: 3 }}>{dateStr}</div>
               <div style={{ marginTop: 10 }}>
                 {statutAbo === 'actif' && (
                   <span style={{ background: 'rgba(0,200,81,.3)', backdropFilter: 'blur(4px)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '4px 12px', border: '1px solid rgba(0,200,81,.4)' }}>
@@ -440,6 +510,31 @@ export default function DashboardPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* ── DESKTOP : ACTIVITÉ DES VENTES + ACTIONS RAPIDES ───────────── */}
+      <div className="dash-desktop-row">
+        <div className="dash-panel">
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 14 }}>Activité des ventes (7 jours)</div>
+          {isDesktopViewport ? <GrapheVentes data={graphData} /> : <div style={{ height: 200 }} />}
+        </div>
+        <div className="dash-panel">
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 14 }}>Actions rapides</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { icon: '✍️', label: 'Nouvelle commande', action: () => setShowCmdManuelle(true), circleColor: C.dark },
+              { icon: '🥘', label: 'Gérer le menu', action: () => router.push('/dashboard/menu'), circleColor: '#00C851' },
+              { icon: '🪑', label: 'Voir les tables', action: () => router.push('/dashboard/tables'), circleColor: '#5B8DEF' },
+              { icon: '🥤', label: 'Mettre à jour le stock', action: () => router.push('/dashboard/stock'), circleColor: '#E85520' },
+            ].map((a) => (
+              <button key={a.label} className="card-btn" onClick={a.action}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.grayLight, border: 'none', borderRadius: 14, padding: '11px 14px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'transform .15s' }}>
+                <div style={{ width: 34, height: 34, borderRadius: '50%', background: a.circleColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{a.icon}</div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{a.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ── COMMANDE MANUELLE CTA ─────────────────────────────────── */}

@@ -18,6 +18,10 @@ export default function DashboardLayout({ children }) {
   const router = useRouter()
   const pathname = usePathname()
   const [restaurant, setRestaurant] = useState(null)
+  const [dateStr, setDateStr] = useState('')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     let active = true
@@ -29,6 +33,11 @@ export default function DashboardLayout({ children }) {
       if (active && profile?.restaurants) setRestaurant(profile.restaurants)
     })()
     return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    const d = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+    setDateStr(d.charAt(0).toUpperCase() + d.slice(1))
   }, [])
 
   const handleLogout = async () => {
@@ -50,13 +59,13 @@ export default function DashboardLayout({ children }) {
         </div>
 
         <div className="dsk-sidebar-resto">
-          {restaurant?.logo_url
+          {mounted && restaurant?.logo_url
             ? <img src={restaurant.logo_url} alt="" className="dsk-sidebar-resto-logo" />
             : <div className="dsk-sidebar-resto-logo dsk-sidebar-resto-logo--placeholder">🍽️</div>
           }
           <div>
-            <div className="dsk-sidebar-resto-nom">{restaurant?.nom || 'Chargement...'}</div>
-            <div className="dsk-sidebar-resto-ville">{restaurant?.ville || '—'}</div>
+            <div className="dsk-sidebar-resto-nom">{mounted ? (restaurant?.nom || 'Chargement...') : ''}</div>
+            <div className="dsk-sidebar-resto-ville">{mounted ? (restaurant?.ville || '—') : ''}</div>
           </div>
         </div>
 
@@ -81,13 +90,10 @@ export default function DashboardLayout({ children }) {
 
       <div className="dsk-main">
         <div className="dsk-topbar">
-          <div style={{ fontWeight: 800, fontSize: 22, color: C.dark }}>Bonjour, {restaurant?.nom || '...'}</div>
-          <div style={{ fontSize: 13, color: C.gray, marginTop: 2 }}>
-            {(() => {
-              const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
-              return today.charAt(0).toUpperCase() + today.slice(1)
-            })()}
+          <div style={{ fontWeight: 800, fontSize: 22, color: C.dark }}>
+            {mounted ? `Bonjour, ${restaurant?.nom || '...'}` : ''}
           </div>
+          <div style={{ fontSize: 13, color: C.gray, marginTop: 2 }}>{mounted ? dateStr : ''}</div>
         </div>
         {children}
       </div>
