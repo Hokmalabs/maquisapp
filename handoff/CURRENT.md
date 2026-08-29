@@ -1,86 +1,48 @@
-# État actuel — MaquisApp
+# MaquisApp — État courant du chantier
+_Dernière mise à jour : 29 août 2026_
 
-**Dernière session :** Chantier retours terrain (resto "L'Assiette Savoureuse de PM")
-clos — rapport ventes par article, historique fiabilisé, regroupement par encaissement.
+## Chantier en cours : Refonte desktop responsive (Volet A)
 
----
+### Principe directeur (vaut sur tout le chantier)
+- Bascule à **900px**. Mobile **strictement intact** (surcouche desktop additive, jamais de modif des valeurs mobiles).
+- Desktop en CSS `@media (min-width: 900px)`.
+- **Règle SSR** : toute date/valeur affichée dépendant de l'heure ou du navigateur est rendue vide au premier paint, puis peuplée en `useEffect` (flag `mounted`). Un `new Date()` au render diverge serveur/client → mismatch d'hydration.
+- **Règle contexte** : une page dashboard ne rappelle JAMAIS `supabase.auth.getUser()`. Tout (resto, restaurantId, userId) vient de `useRestaurant()`. Deux `getUser()` en parallèle = conflit de verrou sur le token auth ("Lock ... was released because another request stole it").
+- Discipline : une page = un prompt = un test (mobile d'abord, desktop ensuite) = un commit. Jamais de migration groupée.
 
-## Ce qui a été fait cette session
+### FAIT et commité (branche develop)
+1. **RestaurantContext** dans `dashboard/layout.js` : charge le resto une fois, expose `restaurant`, `restaurantId`, `userId`, `loading`, `refresh()` via `useRestaurant()`. Sidebar + topbar desktop. Flag `mounted` anti-hydration.
+2. **Accueil desktop** (`dashboard/page.js`) : sidebar, topbar, GrapheVentes 7j (Recharts, dynamic import ssr:false), CA du jour dérivé de commande_items (ADR 004). NB : l'accueil garde son propre chargement (charge bien plus que le resto) — non migré vers le contexte, redondance temporaire assumée.
+3. **7 pages migrées** vers contexte + desktop responsive : parametres, stock, tables, historique, menu, commandes. Chacune : contexte, header mobile masqué desktop, contenu élargi, `@import` Google Fonts (bloqué CSP) supprimé.
+4. **Bottom-nav centralisée** dans `layout.js` (mobile only, item actif déduit du pathname). Les 7 bottom-nav locales retirées.
 
-### Chantier "retours terrain" — 3 commits sur develop
+### Spécificités par page (à connaître avant de retoucher)
+- **stock** : mode admin PIN (verify-admin-pin) préservé. `userId` vient du contexte. ⚠️ verify-admin-pin fait confiance à un userId fourni par le client → risque sécurité connu (P2/P3), NON traité ici.
+- **historique** : toute la dérivation commande_items / grouperSessions par cloture_id (ADR 004) intouchée. Deux colonnes desktop.
+- **menu** : grille plats 2 colonnes desktop (pas 3 — les cards horizontales se tassaient à 3). Upload Storage intouché. Card verticale façon maquette = polish futur, pas fait.
+- **commandes** : Realtime, clôture (cloturerTout + cloture_id), RPC statut table, ticket, bon cuisine — tout intouché. Grille 2 colonnes desktop (pas le kanban de la maquette = polish futur).
 
-**Commit 1 — Rapport de ventes par article (Retour 2)**
-- Nouveau module `src/lib/ventes.js` : fonctions pures de dérivation des totaux depuis
-  `commande_items` (source de vérité unique, conforme ADR 004) :
-  `deriverTotalCommande`, `indexerItemsParCommande`, `agregerParArticle`, `grouperSessions`.
-- Nouvelle page `src/app/dashboard/historique/articles/page.js` : rapport ventes par
-  article (quantités + montants agrégés sur `commande_items`, top ventes en barres
-  horizontales maison, zéro dépendance). Lecture seule.
+## Tickets ouverts
 
-**Commit 2 — Historique fiabilisé + regroupement par session (Retour 1)**
-- `src/app/dashboard/historique/page.js` réécrit : tous les montants (CA, panier moyen,
-  encaissements par mode, bar chart, liste, modal, CSV) dérivés de `commande_items`.
-  Plus aucune lecture de `commandes.total`.
-- Liste "Détail" regroupée par session de table au lieu d'être éclatée ligne par ligne.
+### P1 — Bug hydration au premier chargement post-login (À CORRIGER AVANT PROD)
+Après connexion, le premier rendu du dashboard affiche un état hybride cassé : sidebar desktop OK mais contenu accueil en mode mobile (header sombre, colonne étroite). Un Ctrl+Shift+R corrige. C'est un mismatch d'hydration au premier paint post-redirection login→dashboard. **Contournement actuel = hard refresh, ce n'est PAS une correction.** Le client en prod le subira.
+→ Piste : lire l'erreur console EXACTE sur l'écran cassé ("Text content does not match server-rendered HTML") AVANT tout fix. Ne pas fixer à l'aveugle.
 
-**Commit 3 — Regroupement déterministe par encaissement**
-- Constat terrain : regrouper par proximité temporelle est faux (deux clients successifs
-  sur la même table à < 3h étaient fusionnés). La bonne frontière = l'encaissement.
-- Migration `supabase/migrations/20260827140301_add_cloture_id.sql` : ajoute
-  `commandes.cloture_id` (uuid nullable, index, pas de backfill). **Appliquée à la main
-  dans Supabase Studio** (Docker indisponible). NULL = commande clôturée avant le tampon,
-  reste isolée dans l'historique.
-- `cloturerTout` (`src/app/dashboard/commandes/page.js`) génère un `cloture_id` unique par
-  encaissement et le pose sur toutes les commandes du groupe.
-- `grouperSessions` regroupe désormais par `cloture_id` (ou solo par commande si NULL),
-  plus aucune logique de seuil temporel.
-- Validé en preview : nouveaux encaissements groupés en une session, anciennes commandes
-  restées éclatées (comportement voulu).
+### Auth desktop (Étape 3) — REPORTÉ, confusion à élucider d'abord
+`auth/login/page.js` et `auth/register/page.js` sont de simples redirections vers `/auth?mode=login|register`. Le vrai écran est `auth/page.js`. MAIS : le contenu de `auth/page.js` (login/signup, phone/otp) ne correspond PAS aux maquettes montrant un stepper 4 étapes (Téléphone→SMS→Informations→PIN) + champ PIN + "PIN oublié ?".
+→ Avant toute migration auth : lancer `grep -rl "Code PIN" src/app` pour identifier le VRAI fichier qui affiche le stepper+PIN. Ne pas régénérer auth/page.js (une tentative a déjà supprimé de la logique par erreur — annulée via git checkout).
+→ Image de fond souhaitée sur le hero desktop (façon maquette) : nécessite un fichier réel dans /public (pas d'URL externe, CSP + egress).
 
----
+### Dette non bloquante
+- Règles CSS orphelines `.pg-bottomnav { display:none }` dans les 7 pages (plus matchées, inoffensives) — à balayer lors de la propagation theme.js.
+- `theme.js` créé mais chaque page a encore son objet `C` local — propager (design system).
+- Double chargement profil : layout + accueil chargent le resto séparément — dédupliquer l'accueil vers le contexte plus tard.
+- `@import` Google Fonts encore présent sur les pages HORS dashboard (admin, abonnement, cuisine, menu public, legal, not-found).
+- `git stash@{0}` (flèches volet A abandonnées) à drop après validation.
+- Next 14.2.35 signalé outdated (upgrade 14→15 à planifier).
 
-## État du dépôt
-
-- `develop` = 3 commits au-dessus de l'état prod précédent (retours terrain).
-- `main` = état prod, **pas encore mergé** (merge à décider par Joel).
-- Migration `cloture_id` déjà appliquée sur la base Supabase (partagée preview/prod),
-  opération non destructive.
-- `feature/multi-resto` = chantier multi-resto toujours gelé (6 commits).
-- Working tree clean.
-
----
-
-## À décider
-
-- **Merge `develop` → `main`** : à faire quand Joel juge l'ensemble assez validé
-  (idéalement après test du resto en preview).
-
----
-
-## Prochain chantier : Volet A — Débloquer l'usage sur PC desktop
-
-Le seul client actif utilise l'app sur un **PC de gestion non tactile**, alors qu'elle
-est conçue mobile-first strict (max-width 480px). Problèmes constatés :
-- Impossible de scroller horizontalement les catégories (> 10 catégories) sans écran tactile.
-- Affichage étriqué / peu adapté au desktop.
-
-Objectif du volet A (bloquant en prod pour ce client) :
-- Rendre le dashboard/commande manuelle utilisable au-delà de 480px (responsive desktop).
-- Régler le scroll des catégories (flèches, molette, ou wrap sur desktop).
-- Amorcer le passage des plats en cards cliquables avec boutons +/−.
-
-Volets B et C (à cadrer ENSUITE, ne pas démarrer avant A) :
-- **Volet B (schéma)** : supprimer la duplication intérieur/extérieur. Un article unique =
-  un seul stock, avec 1 à N tarifs nommés (résout le bug de stock boisson dupliqué).
-  Accompagnements gratuits cochables par article (pré-remplis à la création du resto,
-  modifiables en base — pas en dur). Supplément payant = article séparé (pas d'options
-  payantes). Nécessite une ADR + migration + bascule des données du client existant.
-- **Volet C (UI)** : cards cliquables → modal options (tarif + accompagnements) → panier.
-  Consomme le schéma du volet B.
-
----
-
-## Chantiers EN PAUSE
-
-- **Refonte back-office admin** : maquette validée (sidebar + sous-routes). À reprendre.
-- **Multi-resto** : gelé sur `feature/multi-resto`.
+## Reste à faire sur Volet A avant merge main
+1. **Validation preview complète** sur le vrai PC client (Vercel preview de develop) : parcourir les 7 pages en desktop, vérifier navigation sans retour au mode mobile.
+2. **Corriger le bug P1** (hydration post-login) — bloquant pour la prod.
+3. **Auth desktop** (après élucidation fichier).
+4. **Merge develop → main** (fast-forward) — emporte aussi le chantier retours terrain précédent (rapport articles, historique fiabilisé, cloture_id) qui attend son merge.

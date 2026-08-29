@@ -1,3 +1,20 @@
+## Session du 29 août 2026 — Refonte desktop dashboard (Volet A, Étape 4)
+
+- feat(dashboard): accueil desktop responsive (sidebar, topbar, graphe ventes 7j, CA dérivé commande_items) [22ea15e]
+- feat(dashboard): RestaurantContext partagé dans le layout dashboard [0c7b7cb]
+- feat(dashboard): parametres desktop responsive + conso RestaurantContext [ac2e952]
+- feat(dashboard): stock desktop responsive + userId exposé via RestaurantContext [9821d8f]
+- feat(dashboard): tables desktop responsive + conso RestaurantContext [85cecb1]
+- feat(dashboard): historique desktop responsive + conso RestaurantContext [c3b87d2]
+- feat(dashboard): menu desktop responsive (grille 2 col) + conso RestaurantContext
+- feat(dashboard): commandes desktop responsive + conso RestaurantContext
+- refactor(dashboard): bottom-nav mobile centralisée dans le layout, retrait des 7 nav locales
+
+Enseignements :
+- Conflit de verrou auth token si une page rappelle getUser() en plus du layout → tout passe par le contexte.
+- Card menu horizontale se tasse à 3 colonnes desktop → 2 colonnes retenu.
+- Bug hydration post-login (image hybride cassée) contourné par hard refresh, PAS corrigé — ticket P1.
+
 # Changelog — MaquisApp
 
 Historique des sessions, changements majeurs, incidents.
