@@ -51,6 +51,7 @@ export default function DashboardPage() {
   const [tables, setTables] = useState([])
   const [categories, setCategories] = useState([])
   const [plats, setPlats] = useState([])
+  const [tarifsByPlat, setTarifsByPlat] = useState({}) // { plat_id: [{id, prix, ordre, actif}] } (ADR 006)
   const [selectedTable, setSelectedTable] = useState(null)
   const [panier, setPanier] = useState([])
   const [activeCat, setActiveCat] = useState(null)
@@ -235,6 +236,22 @@ export default function DashboardPage() {
     if (cats?.length) setActiveCat(cats[0].id)
     setPlats(pls || [])
 
+    // Tarifs multiples (ADR 006) : chargés en une requête, indexés par plat_id.
+    // Servent à résoudre le prix appliqué selon le tarif_ordre de la table choisie.
+    const platIds = (pls || []).map(p => p.id)
+    if (platIds.length) {
+      const { data: tarifs } = await supabase
+        .from('plat_tarifs').select('*').in('plat_id', platIds).order('ordre')
+      const map = {}
+      for (const t of (tarifs || [])) {
+        if (!map[t.plat_id]) map[t.plat_id] = []
+        map[t.plat_id].push(t)
+      }
+      setTarifsByPlat(map)
+    } else {
+      setTarifsByPlat({})
+    }
+
     const [{ data: platsCheck }, { data: tablesCheck }] = await Promise.all([
       supabase.from('plats').select('id').eq('restaurant_id', rid).limit(1),
       supabase.from('tables').select('id').eq('restaurant_id', rid).limit(1),
@@ -285,6 +302,18 @@ export default function DashboardPage() {
 
   const formatCFA = (n) => new Intl.NumberFormat('fr-FR').format(n) + ' F'
 
+  // Résout le prix applicable à un plat pour la table sélectionnée (ADR 006).
+  // Règle : tarif dont l'ordre == table.tarif_ordre ; à défaut, repli sur ordre 1 ;
+  // à défaut de tarifs (legacy), plat.prix. Retourne { prix, tarif_id }.
+  const resoudreTarif = (plat) => {
+    const ordreCible = selectedTable?.tarif_ordre || 1
+    const list = (tarifsByPlat[plat.id] || []).filter(t => t.actif)
+    if (!list.length) return { prix: Number(plat.prix), tarif_id: null }
+    const exact = list.find(t => t.ordre === ordreCible)
+    const chosen = exact || list.find(t => t.ordre === 1) || list.slice().sort((a, b) => a.ordre - b.ordre)[0]
+    return { prix: Number(chosen.prix), tarif_id: chosen.id }
+  }
+
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0)
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0)
 
@@ -299,10 +328,11 @@ export default function DashboardPage() {
         return
       }
     }
+    const { prix, tarif_id } = resoudreTarif(plat)
     setPanier(prev => {
       const ex = prev.find(i => i.plat_id === plat.id)
       if (ex) return prev.map(i => i.plat_id === plat.id ? { ...i, quantite: i.quantite + 1 } : i)
-      return [...prev, { plat_id: plat.id, nom: plat.nom, prix: plat.prix, quantite: 1 }]
+      return [...prev, { plat_id: plat.id, nom: plat.nom, prix, tarif_id, quantite: 1 }]
     })
   }
 
@@ -325,7 +355,7 @@ export default function DashboardPage() {
       .select().single()
     if (!error && cmd) {
       await supabase.from('commande_items').insert(
-        panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, quantite: i.quantite, note: '' }))
+        panier.map(i => ({ commande_id: cmd.id, plat_id: i.plat_id, nom_plat: i.nom, prix_unitaire: i.prix, tarif_id: i.tarif_id || null, quantite: i.quantite, note: '' }))
       )
     }
     setSendingCmd(false)
@@ -665,7 +695,9 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ overflowY: 'auto', flex: 1, padding: '12px 18px' }}>
-                  {plats.filter(p => p.categorie_id === activeCat).map(plat => (
+                  {plats.filter(p => p.categorie_id === activeCat).map(plat => {
+                    const { prix: prixAffiche } = resoudreTarif(plat)
+                    return (
                     <div key={plat.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
                       {plat.image_url
                         ? <img src={plat.image_url} alt="" style={{ width: 50, height: 50, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
@@ -673,7 +705,7 @@ export default function DashboardPage() {
                       }
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{plat.nom}</div>
-                        <div style={{ fontSize: 12, color: C.primary, fontWeight: 700 }}>{plat.prix.toLocaleString()} F</div>
+                        <div style={{ fontSize: 12, color: C.primary, fontWeight: 700 }}>{prixAffiche.toLocaleString()} F</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                         {qte(plat.id) > 0 && (
@@ -685,7 +717,8 @@ export default function DashboardPage() {
                         <button onClick={() => ajouterPlat(plat)} style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: C.primary, cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
 
                 {countPanier > 0 && (
