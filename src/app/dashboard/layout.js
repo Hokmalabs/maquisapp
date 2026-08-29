@@ -35,6 +35,7 @@ export default function DashboardLayout({ children }) {
   const pathname = usePathname()
   const [restaurant, setRestaurant] = useState(null)
   const [restaurantId, setRestaurantId] = useState(null)
+  const [userId, setUserId] = useState(null)
   const [restoLoading, setRestoLoading] = useState(true)
   const [dateStr, setDateStr] = useState('')
   const [mounted, setMounted] = useState(false)
@@ -59,6 +60,7 @@ export default function DashboardLayout({ children }) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!active) return
       if (!user) { router.push('/auth/login'); return }
+      setUserId(user.id)
       const { data: profile } = await supabase
         .from('profiles').select('*, restaurants(*)').eq('id', user.id).single()
       if (!active) return
@@ -87,7 +89,7 @@ export default function DashboardLayout({ children }) {
   }
 
   return (
-    <RestaurantContext.Provider value={{ restaurant, restaurantId, loading: restoLoading, refresh: loadRestaurant }}>
+    <RestaurantContext.Provider value={{ restaurant, restaurantId, userId, loading: restoLoading, refresh: loadRestaurant }}>
       <div style={{ display: 'flex', minHeight: '100vh' }}>
         <aside className="dsk-sidebar">
           <div className="dsk-sidebar-brand">

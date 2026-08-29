@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useRestaurant } from '../layout'
 
 const C = {
   bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
@@ -14,8 +15,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 export default function StockPage() {
   const router = useRouter()
-  const [userId, setUserId] = useState(null)
-  const [restaurantId, setRestaurantId] = useState(null)
+  const { restaurantId: ctxRestaurantId, userId, loading: ctxLoading } = useRestaurant()
   const [boissons, setBoissons] = useState([])
   const [loading, setLoading] = useState(true)
   const [recherche, setRecherche] = useState('')
@@ -30,18 +30,12 @@ export default function StockPage() {
   const [pinLoading, setPinLoading] = useState(false)
   const pinRefs = useRef([])
 
-  useEffect(() => { loadData() }, [])
-
-  async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/auth/login'); return }
-    setUserId(user.id)
-    const { data: profile } = await supabase.from('profiles').select('restaurant_id').eq('id', user.id).single()
-    if (!profile) { router.push('/auth/login'); return }
-    setRestaurantId(profile.restaurant_id)
-    await loadBoissons(profile.restaurant_id)
-    setLoading(false)
-  }
+  // Charge les boissons dès que le contexte a fourni le restaurant.
+  useEffect(() => {
+    if (ctxLoading) return
+    if (!ctxRestaurantId) { setLoading(false); return }
+    loadBoissons(ctxRestaurantId).then(() => setLoading(false))
+  }, [ctxLoading, ctxRestaurantId])
 
   async function loadBoissons(rid) {
     const { data } = await supabase.from('plats')
@@ -174,7 +168,7 @@ export default function StockPage() {
     return { label: 'En stock', bg: 'rgba(0,200,81,.12)', color: C.green }
   }
 
-  if (loading) return (
+  if (loading || ctxLoading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>🥤</div>
       <p style={{ color: C.primary, fontWeight: 600, fontSize: 14 }}>Chargement...</p>
@@ -183,9 +177,8 @@ export default function StockPage() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
+    <div className="pg-root" style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { display: none; }
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.08)} }
@@ -193,10 +186,21 @@ export default function StockPage() {
         @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
         @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
         .btn:active { transform: scale(0.96); }
+        .stock-list { display: block; }
+
+        @media (min-width: 900px) {
+          .pg-root { max-width: 1180px !important; margin: 0 !important; padding: 24px 28px 40px !important; }
+          .pg-mobile-header { display: none !important; }
+          .pg-bottomnav { display: none !important; }
+          .pg-block { margin-left: 0 !important; margin-right: 0 !important; }
+          .pg-block-first { margin-top: 0 !important; }
+          .stock-list { display: grid !important; grid-template-columns: 1fr 1fr; gap: 10px; }
+          .stock-list > div { margin-bottom: 0 !important; }
+        }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
+      {/* HEADER MOBILE */}
+      <div className="pg-mobile-header" style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={() => router.push('/dashboard')} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16, color: '#fff', flexShrink: 0 }}>←</button>
           <div>
@@ -207,7 +211,7 @@ export default function StockPage() {
       </div>
 
       {/* BOUTON MODE ADMIN */}
-      <div style={{ margin: '14px 16px 0' }}>
+      <div className="pg-block pg-block-first" style={{ margin: '14px 16px 0' }}>
         {!adminMode ? (
           <button onClick={openPinModal}
             style={{ width: '100%', background: 'linear-gradient(135deg, #FFF8E1, #FFE0B2)', border: '1.5px solid #FFB800', borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -236,7 +240,7 @@ export default function StockPage() {
       </div>
 
       {/* STAT CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, margin: '14px 16px 0' }}>
+      <div className="pg-block" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, margin: '14px 16px 0' }}>
         {[
           { val: stats.total, label: 'Total', bg: C.white, color: C.dark },
           { val: stats.actif, label: 'Suivies', bg: C.white, color: '#5B8DEF' },
@@ -251,7 +255,7 @@ export default function StockPage() {
       </div>
 
       {/* SEARCH + FILTRE */}
-      <div style={{ padding: '12px 16px 0' }}>
+      <div className="pg-block" style={{ padding: '12px 16px 0' }}>
         <div style={{ position: 'relative', marginBottom: 10 }}>
           <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14 }}>🔍</span>
           <input value={recherche} onChange={e => setRecherche(e.target.value)} placeholder="Rechercher une boisson..."
@@ -273,7 +277,7 @@ export default function StockPage() {
       </div>
 
       {/* LISTE */}
-      <div style={{ padding: '12px 16px 0' }}>
+      <div className="pg-block" style={{ padding: '12px 16px 0' }}>
         {boissons.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: C.gray }}>
             <div style={{ fontSize: 40 }}>🥤</div>
@@ -286,52 +290,56 @@ export default function StockPage() {
             <div style={{ fontSize: 32 }}>✅</div>
             <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8 }}>Aucune boisson dans ce filtre</div>
           </div>
-        ) : boissonsFiltrees.map(b => {
-          const badge = getBadge(b)
-          return (
-            <div key={b.id} style={{ background: C.white, borderRadius: 16, padding: '14px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 10, borderLeft: `4px solid ${(b.stock_actuel || 0) <= 0 && b.stock_actif ? C.red : (b.stock_actuel || 0) <= (b.stock_alerte || 10) && b.stock_actif ? C.yellow : C.green}` }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{b.nom}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: badge.bg, color: badge.color }}>{badge.label}</div>
-                    {b.stock_actif && <span style={{ fontSize: 11, color: C.gray }}>Seuil : {b.stock_alerte || 10}</span>}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: C.gray }}>Suivi</span>
-                  <button onClick={() => toggleStockActif(b)}
-                    style={{ width: 40, height: 22, borderRadius: 11, background: b.stock_actif ? C.green : C.border, border: 'none', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
-                    <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: b.stock_actif ? 21 : 3, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }}></div>
-                  </button>
-                </div>
-              </div>
-
-              {b.stock_actif && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <button className="btn" onClick={() => ajusterStock(b, -1)} disabled={ajustLoading !== null || (b.stock_actuel || 0) <= 0}
-                      style={{ width: 34, height: 34, borderRadius: 9, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dark, opacity: (b.stock_actuel || 0) <= 0 ? .4 : 1 }}>−</button>
-                    <div style={{ textAlign: 'center', minWidth: 52 }}>
-                      <div style={{ fontSize: 26, fontWeight: 800, color: (b.stock_actuel || 0) <= 0 ? C.red : (b.stock_actuel || 0) <= (b.stock_alerte || 10) ? C.yellow : C.dark, lineHeight: 1 }}>{b.stock_actuel || 0}</div>
-                      <div style={{ fontSize: 10, color: C.gray, marginTop: 2 }}>unités</div>
+        ) : (
+          <div className="stock-list">
+            {boissonsFiltrees.map(b => {
+              const badge = getBadge(b)
+              return (
+                <div key={b.id} style={{ background: C.white, borderRadius: 16, padding: '14px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 10, borderLeft: `4px solid ${(b.stock_actuel || 0) <= 0 && b.stock_actif ? C.red : (b.stock_actuel || 0) <= (b.stock_alerte || 10) && b.stock_actif ? C.yellow : C.green}` }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{b.nom}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: badge.bg, color: badge.color }}>{badge.label}</div>
+                        {b.stock_actif && <span style={{ fontSize: 11, color: C.gray }}>Seuil : {b.stock_alerte || 10}</span>}
+                      </div>
                     </div>
-                    <button className="btn" onClick={() => ajusterStock(b, 1)} disabled={ajustLoading !== null}
-                      style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: C.primary, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: C.gray }}>Suivi</span>
+                      <button onClick={() => toggleStockActif(b)}
+                        style={{ width: 40, height: 22, borderRadius: 11, background: b.stock_actif ? C.green : C.border, border: 'none', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: b.stock_actif ? 21 : 3, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }}></div>
+                      </button>
+                    </div>
                   </div>
-                  <button className="btn" onClick={() => reapprovisionner(b)} disabled={!adminMode}
-                    style={{ background: adminMode ? C.primaryLight : C.grayLight, border: 'none', borderRadius: 10, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: adminMode ? C.primary : C.gray, cursor: adminMode ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: adminMode ? 1 : 0.6 }}>
-                    {adminMode ? '📦 Réappro.' : '🔒 Réappro.'}
-                  </button>
+
+                  {b.stock_actif && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <button className="btn" onClick={() => ajusterStock(b, -1)} disabled={ajustLoading !== null || (b.stock_actuel || 0) <= 0}
+                          style={{ width: 34, height: 34, borderRadius: 9, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dark, opacity: (b.stock_actuel || 0) <= 0 ? .4 : 1 }}>−</button>
+                        <div style={{ textAlign: 'center', minWidth: 52 }}>
+                          <div style={{ fontSize: 26, fontWeight: 800, color: (b.stock_actuel || 0) <= 0 ? C.red : (b.stock_actuel || 0) <= (b.stock_alerte || 10) ? C.yellow : C.dark, lineHeight: 1 }}>{b.stock_actuel || 0}</div>
+                          <div style={{ fontSize: 10, color: C.gray, marginTop: 2 }}>unités</div>
+                        </div>
+                        <button className="btn" onClick={() => ajusterStock(b, 1)} disabled={ajustLoading !== null}
+                          style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: C.primary, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
+                      </div>
+                      <button className="btn" onClick={() => reapprovisionner(b)} disabled={!adminMode}
+                        style={{ background: adminMode ? C.primaryLight : C.grayLight, border: 'none', borderRadius: 10, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: adminMode ? C.primary : C.gray, cursor: adminMode ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: adminMode ? 1 : 0.6 }}>
+                        {adminMode ? '📦 Réappro.' : '🔒 Réappro.'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )
-        })}
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* BOTTOM NAV */}
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
+      <div className="pg-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
         {[
           { icon: '🏠', label: 'Accueil', path: '/dashboard' },
           { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
