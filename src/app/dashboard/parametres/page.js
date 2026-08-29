@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useRestaurant } from '../layout'
 
 const C = {
   bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
@@ -11,7 +12,7 @@ const C = {
 
 export default function ParametresPage() {
   const router = useRouter()
-  const [restaurant, setRestaurant] = useState(null)
+  const { restaurant: ctxRestaurant, loading: ctxLoading } = useRestaurant()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -28,25 +29,35 @@ export default function ParametresPage() {
   const [pinError, setPinError] = useState('')
   const [pinSuccess, setPinSuccess] = useState(false)
 
-  useEffect(() => { loadData() }, [])
+  // Le resto vient du contexte partagé (layout). On charge ici uniquement ce
+  // qui est propre à cette page : le profil (nom/prenom/role) et le statut PIN.
+  useEffect(() => {
+    if (ctxLoading) return
+    loadPageData()
+  }, [ctxLoading])
 
-  async function loadData() {
+  // Pré-remplit le form resto dès que le contexte a le restaurant.
+  useEffect(() => {
+    if (ctxRestaurant) {
+      setForm({
+        nom: ctxRestaurant.nom || '',
+        email: ctxRestaurant.email || '',
+        telephone: ctxRestaurant.telephone || '',
+        ville: ctxRestaurant.ville || '',
+        slug: ctxRestaurant.slug || '',
+      })
+    }
+  }, [ctxRestaurant])
+
+  async function loadPageData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/auth/login'); return }
     const { data: prof } = await supabase.from('profiles')
-      .select('id, nom, prenom, restaurant_id, role, restaurants(id, nom, email, telephone, ville, slug)')
+      .select('id, nom, prenom, restaurant_id, role')
       .eq('id', user.id)
       .single()
     if (!prof) { router.push('/auth/login'); return }
     setProfile(prof)
-    setRestaurant(prof.restaurants)
-    setForm({
-      nom: prof.restaurants?.nom || '',
-      email: prof.restaurants?.email || '',
-      telephone: prof.restaurants?.telephone || '',
-      ville: prof.restaurants?.ville || '',
-      slug: prof.restaurants?.slug || '',
-    })
     setProfileForm({ nom: prof.nom || '', prenom: prof.prenom || '' })
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.access_token) {
@@ -105,14 +116,14 @@ export default function ParametresPage() {
   }
 
   async function saveRestaurant() {
-    if (!restaurant) return
+    if (!ctxRestaurant) return
     setSaving(true)
     await supabase.from('restaurants').update({
       nom: form.nom,
       email: form.email,
       telephone: form.telephone,
       ville: form.ville,
-    }).eq('id', restaurant.id)
+    }).eq('id', ctxRestaurant.id)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
@@ -135,7 +146,7 @@ export default function ParametresPage() {
     router.push('/auth/login')
   }
 
-  if (loading) return (
+  if (loading || ctxLoading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>⚙️</div>
       <p style={{ color: C.primary, fontWeight: 600, fontSize: 14 }}>Chargement...</p>
@@ -143,10 +154,12 @@ export default function ParametresPage() {
     </div>
   )
 
+  const cuisineUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://maquisapp-xi.vercel.app'}/cuisine/${ctxRestaurant?.id}`
+  const menuUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://maquisapp-xi.vercel.app'}/menu/${form.slug}/[table-id]`
+
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
+    <div className="pg-root" style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { display: none; }
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.08)} }
@@ -155,16 +168,26 @@ export default function ParametresPage() {
         .btn:active { transform: scale(0.97); }
         input, textarea { transition: border-color .2s; }
         input:focus, textarea:focus { border-color: #8B1A27 !important; }
+        .params-grid { display: block; }
+
+        @media (min-width: 900px) {
+          .pg-root { max-width: 1180px !important; margin: 0 !important; padding: 24px 28px 40px !important; }
+          .pg-mobile-header { display: none !important; }
+          .pg-bottomnav { display: none !important; }
+          .pg-tabs { border-radius: 14px !important; border: 1px solid ${C.border} !important; margin-bottom: 20px !important; padding: 0 8px !important; }
+          .pg-body { padding: 0 !important; }
+          .params-grid { display: grid !important; grid-template-columns: 1.5fr 1fr; gap: 18px; align-items: start; }
+        }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
+      {/* HEADER MOBILE */}
+      <div className="pg-mobile-header" style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => router.push('/dashboard')} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>
             <div>
               <div style={{ color: C.white, fontWeight: 700, fontSize: 15 }}>Paramètres</div>
-              <div style={{ color: '#aaa', fontSize: 11 }}>{restaurant?.nom}</div>
+              <div style={{ color: '#aaa', fontSize: 11 }}>{ctxRestaurant?.nom}</div>
             </div>
           </div>
           {saved && (
@@ -176,7 +199,7 @@ export default function ParametresPage() {
       </div>
 
       {/* SECTION TABS */}
-      <div style={{ background: C.white, borderBottom: `1px solid ${C.border}`, display: 'flex', padding: '0 16px' }}>
+      <div className="pg-tabs" style={{ background: C.white, borderBottom: `1px solid ${C.border}`, display: 'flex', padding: '0 16px' }}>
         {[
           { id: 'restaurant', label: '🍽️ Restaurant' },
           { id: 'profil', label: '👤 Profil' },
@@ -189,97 +212,93 @@ export default function ParametresPage() {
         ))}
       </div>
 
-      <div style={{ padding: '16px' }}>
+      <div className="pg-body" style={{ padding: '16px' }}>
 
         {/* ── SECTION RESTAURANT ─────────────────────────────────────── */}
         {activeSection === 'restaurant' && (
-          <div>
-            {/* Infos resto */}
-            <div style={{ background: C.white, borderRadius: 18, padding: '18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 14 }}>Informations du restaurant</div>
-              {[
-                { key: 'nom', label: 'Nom du restaurant', placeholder: 'Ex: Le Maquis d\'Abidjan', type: 'text' },
-                { key: 'email', label: 'Email de contact', placeholder: 'contact@restaurant.ci', type: 'email' },
-                { key: 'telephone', label: 'Téléphone', placeholder: '+225 07 00 00 00 00', type: 'tel' },
-                { key: 'ville', label: 'Ville', placeholder: 'Abidjan', type: 'text' },
-              ].map(f => (
-                <div key={f.key} style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, color: C.gray, fontWeight: 600, marginBottom: 5 }}>{f.label}</div>
-                  <input
-                    type={f.type}
-                    value={form[f.key]}
-                    onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder}
-                    style={{ width: '100%', padding: '11px 13px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark }}
-                  />
+          <div className="params-grid">
+            {/* Colonne gauche : infos resto + bouton save */}
+            <div>
+              <div style={{ background: C.white, borderRadius: 18, padding: '18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 14 }}>Informations du restaurant</div>
+                {[
+                  { key: 'nom', label: 'Nom du restaurant', placeholder: "Ex: Le Maquis d'Abidjan", type: 'text' },
+                  { key: 'email', label: 'Email de contact', placeholder: 'contact@restaurant.ci', type: 'email' },
+                  { key: 'telephone', label: 'Téléphone', placeholder: '+225 07 00 00 00 00', type: 'tel' },
+                  { key: 'ville', label: 'Ville', placeholder: 'Abidjan', type: 'text' },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, color: C.gray, fontWeight: 600, marginBottom: 5 }}>{f.label}</div>
+                    <input
+                      type={f.type}
+                      value={form[f.key]}
+                      onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                      placeholder={f.placeholder}
+                      style={{ width: '100%', padding: '11px 13px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark }}
+                    />
+                  </div>
+                ))}
+                <div style={{ marginBottom: 0 }}>
+                  <div style={{ fontSize: 11, color: C.gray, fontWeight: 600, marginBottom: 5 }}>Identifiant unique (slug)</div>
+                  <div style={{ padding: '11px 13px', borderRadius: 12, background: C.grayLight, fontSize: 13, color: C.gray, fontFamily: 'monospace' }}>{form.slug}</div>
+                  <div style={{ fontSize: 10, color: C.gray, marginTop: 4 }}>Non modifiable — utilisé dans vos QR codes</div>
                 </div>
-              ))}
-              {/* Slug (lecture seule) */}
-              <div style={{ marginBottom: 0 }}>
-                <div style={{ fontSize: 11, color: C.gray, fontWeight: 600, marginBottom: 5 }}>Identifiant unique (slug)</div>
-                <div style={{ padding: '11px 13px', borderRadius: 12, background: C.grayLight, fontSize: 13, color: C.gray, fontFamily: 'monospace' }}>{form.slug}</div>
-                <div style={{ fontSize: 10, color: C.gray, marginTop: 4 }}>Non modifiable — utilisé dans vos QR codes</div>
               </div>
+
+              <button className="btn" onClick={saveRestaurant} disabled={saving}
+                style={{ width: '100%', background: C.primary, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? .7 : 1 }}>
+                {saving ? 'Enregistrement...' : '💾 Sauvegarder les modifications'}
+              </button>
             </div>
 
-            {/* URL Menu public */}
-            <div style={{ background: C.white, borderRadius: 18, padding: '16px 18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 8 }}>URL de votre menu</div>
-              <div style={{ padding: '10px 12px', borderRadius: 10, background: C.primaryLight, fontSize: 11, color: C.primary, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>
-                {`${process.env.NEXT_PUBLIC_APP_URL || 'https://maquisapp-xi.vercel.app'}/menu/${form.slug}/[table-id]`}
+            {/* Colonne droite : URL menu + écran cuisine */}
+            <div>
+              <div style={{ background: C.white, borderRadius: 18, padding: '16px 18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 8 }}>URL de votre menu</div>
+                <div style={{ padding: '10px 12px', borderRadius: 10, background: C.primaryLight, fontSize: 11, color: C.primary, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>
+                  {menuUrl}
+                </div>
               </div>
-            </div>
 
-            {/* Section Écran Cuisine */}
-            {(() => {
-              const cuisineUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://maquisapp-xi.vercel.app'}/cuisine/${restaurant?.id}`;
-              return (
-                <div style={{ background: C.dark, borderRadius: 16, padding: '18px', marginBottom: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 12, background: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👨‍🍳</div>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Écran Cuisine</div>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)' }}>Affichez les commandes en cuisine</div>
-                    </div>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,.08)', borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 11, color: 'rgba(255,255,255,.7)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
-                    {cuisineUrl}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => { navigator.clipboard.writeText(cuisineUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-                      style={{ flex: 1, background: C.primary, border: 'none', borderRadius: 10, padding: '10px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {copied ? '✅ Copié !' : '📋 Copier le lien'}
-                    </button>
-                    <button onClick={() => window.open(cuisineUrl, '_blank')}
-                      style={{ flex: 1, background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, padding: '10px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      🔗 Ouvrir
-                    </button>
-                  </div>
-                  <div style={{ marginTop: 10, fontSize: 11, color: 'rgba(255,255,255,.4)', textAlign: 'center' }}>
-                    Ouvrez ce lien sur la tablette ou l'écran de votre cuisine
+              <div style={{ background: C.dark, borderRadius: 16, padding: '18px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👨‍🍳</div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Écran Cuisine</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)' }}>Affichez les commandes en cuisine</div>
                   </div>
                 </div>
-              );
-            })()}
-
-            <button className="btn" onClick={saveRestaurant} disabled={saving}
-              style={{ width: '100%', background: C.primary, border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? .7 : 1 }}>
-              {saving ? 'Enregistrement...' : '💾 Sauvegarder les modifications'}
-            </button>
+                <div style={{ background: 'rgba(255,255,255,.08)', borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 11, color: 'rgba(255,255,255,.7)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                  {cuisineUrl}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => { navigator.clipboard.writeText(cuisineUrl); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                    style={{ flex: 1, background: C.primary, border: 'none', borderRadius: 10, padding: '10px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    {copied ? '✅ Copié !' : '📋 Copier le lien'}
+                  </button>
+                  <button onClick={() => window.open(cuisineUrl, '_blank')}
+                    style={{ flex: 1, background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, padding: '10px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    🔗 Ouvrir
+                  </button>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 11, color: 'rgba(255,255,255,.4)', textAlign: 'center' }}>
+                  Ouvrez ce lien sur la tablette ou l'écran de votre cuisine
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
         {/* ── SECTION PROFIL ─────────────────────────────────────────── */}
         {activeSection === 'profil' && (
-          <div>
-            {/* Avatar */}
+          <div style={{ maxWidth: 560 }}>
             <div style={{ background: C.white, borderRadius: 18, padding: '20px 18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{ width: 60, height: 60, borderRadius: 18, background: `linear-gradient(135deg, ${C.primary}, #FF8C42)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, flexShrink: 0 }}>
                 {(profileForm.prenom?.[0] || '👤').toUpperCase()}
               </div>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>{profileForm.prenom} {profileForm.nom}</div>
-                <div style={{ fontSize: 12, color: C.gray, marginTop: 2 }}>Gérant • {restaurant?.nom}</div>
+                <div style={{ fontSize: 12, color: C.gray, marginTop: 2 }}>Gérant • {ctxRestaurant?.nom}</div>
               </div>
             </div>
 
@@ -310,18 +329,17 @@ export default function ParametresPage() {
 
         {/* ── SECTION COMPTE ─────────────────────────────────────────── */}
         {activeSection === 'compte' && (
-          <div>
+          <div style={{ maxWidth: 560 }}>
             {pinSuccess && (
               <div style={{ background: '#E8F5E9', color: C.green, borderRadius: 12, padding: '11px 14px', fontSize: 12, fontWeight: 700, marginBottom: 14 }}>
                 ✓ Code PIN modifié avec succès
               </div>
             )}
-            {/* Infos compte */}
             <div style={{ background: C.white, borderRadius: 18, padding: '18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 14 }}>Informations du compte</div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: 13, color: C.gray }}>Rôle</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: C.dark, background: C.primaryLight, padding: '3px 10px', borderRadius: 20, color: C.primary }}>Gérant</span>
+                <span style={{ fontSize: 13, fontWeight: 600, background: C.primaryLight, padding: '3px 10px', borderRadius: 20, color: C.primary }}>Gérant</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}>
                 <span style={{ fontSize: 13, color: C.gray }}>Plan</span>
@@ -329,7 +347,6 @@ export default function ParametresPage() {
               </div>
             </div>
 
-            {/* Actions compte */}
             <div style={{ background: C.white, borderRadius: 18, padding: '8px 18px', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 14 }}>
               {[
                 ...(hasPin ? [{ label: 'Changer le code PIN', icon: '🔑', color: C.dark, action: () => setShowPinModal(true) }] : []),
@@ -344,7 +361,6 @@ export default function ParametresPage() {
               ))}
             </div>
 
-            {/* Déconnexion */}
             <button className="btn" onClick={() => setShowLogoutConfirm(true)}
               style={{ width: '100%', background: '#FFEBEE', border: 'none', borderRadius: 14, padding: '14px', fontSize: 14, fontWeight: 700, color: C.red, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 12 }}>
               🚪 Se déconnecter
@@ -354,7 +370,7 @@ export default function ParametresPage() {
       </div>
 
       {/* BOTTOM NAV */}
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
+      <div className="pg-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
         {[
           { icon: '🏠', label: 'Accueil', path: '/dashboard' },
           { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
@@ -372,7 +388,7 @@ export default function ParametresPage() {
       </div>
 
       {showPinModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'fadeIn .2s' }}>
           <div onClick={closePinModal} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
           <form onSubmit={changePin} style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', padding: '24px 20px 40px', animation: 'slideUp .3s ease' }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.dark, marginBottom: 6 }}>Changer le code PIN</div>
@@ -404,9 +420,9 @@ export default function ParametresPage() {
 
       {/* CONFIRM LOGOUT */}
       {showLogoutConfirm && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'fadeIn .2s' }}>
           <div onClick={() => setShowLogoutConfirm(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
-          <div style={{ position: 'relative', width: '100%', background: C.white, borderRadius: '22px 22px 0 0', padding: '24px 20px 40px', animation: 'slideUp .3s ease', textAlign: 'center' }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', padding: '24px 20px 40px', animation: 'slideUp .3s ease', textAlign: 'center' }}>
             <div style={{ fontSize: 44, marginBottom: 12 }}>🚪</div>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.dark, marginBottom: 6 }}>Se déconnecter ?</div>
             <div style={{ fontSize: 13, color: C.gray, marginBottom: 24 }}>Vous devrez vous reconnecter pour accéder au dashboard.</div>
