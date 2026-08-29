@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useRestaurant } from '../layout'
 
 const C = {
   bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
@@ -11,7 +12,7 @@ const C = {
 
 export default function MenuPage() {
   const router = useRouter()
-  const [restaurant, setRestaurant] = useState(null)
+  const { restaurant, restaurantId: ctxRestaurantId, loading: ctxLoading } = useRestaurant()
   const [categories, setCategories] = useState([])
   const [plats, setPlats] = useState([])
   const [loading, setLoading] = useState(true)
@@ -25,28 +26,27 @@ export default function MenuPage() {
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
 
-  useEffect(() => { loadData() }, [])
+  // Le resto vient du contexte partagé (layout). On charge ici catégories + plats
+  // dès que le contexte a fourni le restaurantId.
+  useEffect(() => {
+    if (ctxLoading) return
+    if (!ctxRestaurantId) { setLoading(false); return }
+    loadMenu(ctxRestaurantId).then(() => setLoading(false))
+  }, [ctxLoading, ctxRestaurantId])
 
-  async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/auth/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, restaurants(*)').eq('id', user.id).single()
-    if (!profile) { router.push('/auth/login'); return }
-    setRestaurant(profile.restaurants)
-    const rid = profile.restaurant_id
+  async function loadMenu(rid) {
     const [{ data: cats }, { data: pls }] = await Promise.all([
       supabase.from('categories').select('*').eq('restaurant_id', rid).order('ordre'),
       supabase.from('plats').select('*').eq('restaurant_id', rid).order('ordre'),
     ])
     setCategories(cats || [])
     setPlats(pls || [])
-    if (cats?.length) setActiveCat(cats[0].id)
-    setLoading(false)
+    if (cats?.length) setActiveCat(prev => prev || cats[0].id)
   }
 
   // ── CATÉGORIES ────────────────────────────────────────────────────────────
   async function saveCat() {
-    if (!catForm.nom.trim()) return
+    if (!catForm.nom.trim() || !restaurant) return
     setSaving(true)
     if (editingCat) {
       await supabase.from('categories').update({ nom: catForm.nom }).eq('id', editingCat.id)
@@ -58,14 +58,14 @@ export default function MenuPage() {
     setShowCatModal(false)
     setEditingCat(null)
     setCatForm({ nom: '' })
-    loadData()
+    loadMenu(ctxRestaurantId)
   }
 
   async function deleteCat(cat) {
     if (!confirm(`Supprimer la catégorie "${cat.nom}" et tous ses plats ?`)) return
     await supabase.from('plats').delete().eq('categorie_id', cat.id)
     await supabase.from('categories').delete().eq('id', cat.id)
-    loadData()
+    loadMenu(ctxRestaurantId)
   }
 
   // ── PLATS ─────────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ export default function MenuPage() {
   }
 
   async function savePlat() {
-    if (!platForm.nom.trim() || !platForm.prix) return
+    if (!platForm.nom.trim() || !platForm.prix || !restaurant) return
     setSaving(true)
     const payload = { nom: platForm.nom, description: platForm.description, prix: Number(platForm.prix), image_url: platForm.image_url, disponible: platForm.disponible, categorie_id: platForm.categorie_id || activeCat, est_boisson: platForm.est_boisson, stock_actif: platForm.stock_actif, stock_actuel: Number(platForm.stock_actuel), stock_alerte: Number(platForm.stock_alerte) }
     if (editingPlat) {
@@ -93,7 +93,7 @@ export default function MenuPage() {
     setSaving(false)
     setShowPlatModal(false)
     setEditingPlat(null)
-    loadData()
+    loadMenu(ctxRestaurantId)
   }
 
   async function toggleDispo(plat) {
@@ -116,15 +116,12 @@ export default function MenuPage() {
       return
     }
 
-    // Preview immédiate
     const reader = new FileReader()
     reader.onload = (ev) => {
       setPlatForm(prev => ({ ...prev, image_preview: ev.target.result }))
     }
     reader.readAsDataURL(file)
 
-    // Upload vers Supabase Storage
-    // Note: le bucket 'images' doit exister dans Supabase Storage et être PUBLIC.
     const ext = file.name.split('.').pop() || 'jpg'
     const filename = `plat_${Date.now()}_${Math.random().toString(36).substr(2, 6)}.${ext}`
     const path = `plats/${filename}`
@@ -145,7 +142,7 @@ export default function MenuPage() {
 
   const platsDeCat = plats.filter(p => p.categorie_id === activeCat)
 
-  if (loading) return (
+  if (loading || ctxLoading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>🍛</div>
       <p style={{ color: C.primary, fontWeight: 600, fontSize: 14 }}>Chargement...</p>
@@ -154,9 +151,8 @@ export default function MenuPage() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
+    <div className="pg-root" style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { display: none; }
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.08)} }
@@ -164,10 +160,21 @@ export default function MenuPage() {
         @keyframes fadeIn { from{opacity:0} to{opacity:1} }
         .plat-card:active { transform: scale(0.98); }
         .btn:active { transform: scale(0.97); }
+        .menu-plats { display: block; }
+        .pg-desktop-head { display: none; }
+
+        @media (min-width: 900px) {
+          .pg-root { max-width: 1180px !important; margin: 0 auto !important; padding: 24px 28px 40px !important; }
+          .pg-mobile-header { display: none !important; }
+          .pg-bottomnav { display: none !important; }
+          .pg-desktop-head { display: flex !important; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+          .menu-plats { display: grid !important; grid-template-columns: 1fr 1fr; gap: 12px; }
+          .menu-plats > .plat-card { margin-bottom: 0 !important; }
+        }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
+      {/* HEADER MOBILE */}
+      <div className="pg-mobile-header" style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => router.push('/dashboard')} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>
@@ -183,8 +190,26 @@ export default function MenuPage() {
         </div>
       </div>
 
+      {/* HEADER DESKTOP */}
+      <div className="pg-desktop-head">
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: C.dark }}>Menu</div>
+          <div style={{ fontSize: 12, color: C.gray, marginTop: 2 }}>{plats.filter(p => p.disponible).length} plats disponibles</div>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn" onClick={() => { setEditingCat(null); setCatForm({ nom: '' }); setShowCatModal(true) }}
+            style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '10px 16px', fontSize: 13, fontWeight: 700, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>
+            + Catégorie
+          </button>
+          <button className="btn" onClick={() => openPlatModal()}
+            style={{ background: C.primary, border: 'none', borderRadius: 12, padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+            + Ajouter un plat
+          </button>
+        </div>
+      </div>
+
       {/* CATÉGORIES TABS */}
-      <div style={{ background: C.white, borderBottom: `1px solid ${C.border}` }}>
+      <div className="pg-tabs" style={{ background: C.white, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: 'flex', gap: 0, overflowX: 'auto', padding: '0 16px' }}>
           {categories.map(cat => (
             <div key={cat.id} style={{ flexShrink: 0, position: 'relative' }}>
@@ -205,10 +230,10 @@ export default function MenuPage() {
       </div>
 
       {/* PLATS */}
-      <div style={{ padding: '14px 16px 0' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{categories.find(c => c.id === activeCat)?.nom || 'Plats'}</div>
-          <button className="btn" onClick={() => openPlatModal()}
+      <div className="pg-plats-wrap" style={{ padding: '14px 16px 0' }}>
+        <div className="menu-plats-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>{categories.find(c => c.id === activeCat)?.nom || 'Plats'}</div>
+          <button className="btn menu-add-mobile" onClick={() => openPlatModal()}
             style={{ background: C.primary, border: 'none', borderRadius: 12, padding: '7px 14px', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
             + Ajouter
           </button>
@@ -220,45 +245,48 @@ export default function MenuPage() {
             <div style={{ fontSize: 14, fontWeight: 600, marginTop: 10 }}>Aucun plat dans cette catégorie</div>
             <button onClick={() => openPlatModal()} style={{ marginTop: 14, background: C.primary, border: 'none', borderRadius: 12, padding: '10px 20px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Ajouter un plat</button>
           </div>
-        ) : platsDeCat.map(plat => (
-          <div key={plat.id} className="plat-card" style={{ background: C.white, borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 10, opacity: plat.disponible ? 1 : .6, transition: 'all .2s' }}>
-            {plat.image_url
-              ? <img src={plat.image_url} alt="" style={{ width: 88, height: 88, objectFit: 'cover', flexShrink: 0 }} />
-              : <div style={{ width: 88, height: 88, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, flexShrink: 0 }}>🍽️</div>
-            }
-            <div style={{ flex: 1, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{plat.nom}</div>
-                  {plat.est_boisson && plat.stock_actif && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 8, fontSize: 10, fontWeight: 700,
-                      background: (plat.stock_actuel || 0) <= 0 ? 'rgba(255,59,48,.12)' : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? 'rgba(255,184,0,.15)' : 'rgba(0,200,81,.12)',
-                      color: (plat.stock_actuel || 0) <= 0 ? C.red : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? '#7A5C00' : C.green }}>
-                      {(plat.stock_actuel || 0) <= 0 ? '⛔' : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? '⚠️' : '✓'} {plat.stock_actuel || 0}
+        ) : (
+          <div className="menu-plats">
+            {platsDeCat.map(plat => (
+              <div key={plat.id} className="plat-card" style={{ background: C.white, borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 10, opacity: plat.disponible ? 1 : .6, transition: 'all .2s' }}>
+                {plat.image_url
+                  ? <img src={plat.image_url} alt="" style={{ width: 88, height: 88, objectFit: 'cover', flexShrink: 0 }} />
+                  : <div style={{ width: 88, height: 88, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, flexShrink: 0 }}>🍽️</div>
+                }
+                <div style={{ flex: 1, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0 }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{plat.nom}</div>
+                      {plat.est_boisson && plat.stock_actif && (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 8, fontSize: 10, fontWeight: 700,
+                          background: (plat.stock_actuel || 0) <= 0 ? 'rgba(255,59,48,.12)' : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? 'rgba(255,184,0,.15)' : 'rgba(0,200,81,.12)',
+                          color: (plat.stock_actuel || 0) <= 0 ? C.red : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? '#7A5C00' : C.green }}>
+                          {(plat.stock_actuel || 0) <= 0 ? '⛔' : (plat.stock_actuel || 0) <= (plat.stock_alerte || 10) ? '⚠️' : '✓'} {plat.stock_actuel || 0}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                {plat.description && <div style={{ fontSize: 11, color: C.gray, marginTop: 2, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{plat.prix.toLocaleString()} F</div>
-                <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                  {/* Toggle dispo */}
-                  <div onClick={() => toggleDispo(plat)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: plat.disponible ? 'rgba(0,200,81,0.12)' : 'rgba(255,59,48,0.12)', color: plat.disponible ? C.green : C.red, border: `1px solid ${plat.disponible ? 'rgba(0,200,81,0.3)' : 'rgba(255,59,48,0.3)'}` }}>
-                    {plat.disponible ? '✓ Disponible' : '✗ Indisponible'}
+                    {plat.description && <div style={{ fontSize: 11, color: C.gray, marginTop: 2, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
                   </div>
-                  <button onClick={() => openPlatModal(plat)} style={{ background: C.grayLight, border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✏️</button>
-                  <button onClick={() => deletePlat(plat)} style={{ background: '#FFEBEE', border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red }}>🗑️</button>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{plat.prix.toLocaleString()} F</div>
+                    <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                      <div onClick={() => toggleDispo(plat)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: plat.disponible ? 'rgba(0,200,81,0.12)' : 'rgba(255,59,48,0.12)', color: plat.disponible ? C.green : C.red, border: `1px solid ${plat.disponible ? 'rgba(0,200,81,0.3)' : 'rgba(255,59,48,0.3)'}` }}>
+                        {plat.disponible ? '✓ Disponible' : '✗ Indisponible'}
+                      </div>
+                      <button onClick={() => openPlatModal(plat)} style={{ background: C.grayLight, border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✏️</button>
+                      <button onClick={() => deletePlat(plat)} style={{ background: '#FFEBEE', border: 'none', borderRadius: 8, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red }}>🗑️</button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
       {/* BOTTOM NAV */}
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
+      <div className="pg-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
         {[
           { icon: '🏠', label: 'Accueil', path: '/dashboard' },
           { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
@@ -277,9 +305,9 @@ export default function MenuPage() {
 
       {/* MODAL CATÉGORIE */}
       {showCatModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'fadeIn .2s' }}>
           <div onClick={() => setShowCatModal(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
-          <div style={{ position: 'relative', width: '100%', background: C.white, borderRadius: '22px 22px 0 0', padding: '18px 18px 40px', animation: 'slideUp .3s ease' }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', padding: '18px 18px 40px', animation: 'slideUp .3s ease' }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.dark, marginBottom: 16 }}>{editingCat ? 'Modifier la catégorie' : 'Nouvelle catégorie'}</div>
             <input value={catForm.nom} onChange={e => setCatForm({ nom: e.target.value })} placeholder="Nom de la catégorie (ex: Grillades)"
               style={{ width: '100%', padding: '13px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 14, outline: 'none', fontFamily: 'inherit', color: C.dark, marginBottom: 14 }} />
@@ -293,9 +321,9 @@ export default function MenuPage() {
 
       {/* MODAL PLAT */}
       {showPlatModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'fadeIn .2s' }}>
           <div onClick={() => setShowPlatModal(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
-          <div style={{ position: 'relative', width: '100%', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '90vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '90vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
               <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
             </div>
@@ -304,7 +332,6 @@ export default function MenuPage() {
               <button onClick={() => setShowPlatModal(false)} style={{ background: C.grayLight, border: 'none', borderRadius: 9, width: 30, height: 30, cursor: 'pointer', fontSize: 14 }}>✕</button>
             </div>
             <div style={{ overflowY: 'auto', flex: 1, padding: '14px 18px' }}>
-              {/* Image */}
               <div style={{ marginBottom: 14 }}>
                 <div onClick={() => fileRef.current?.click()}
                   style={{ width: '100%', height: 140, borderRadius: 14, border: `2px dashed ${C.border}`, cursor: 'pointer', overflow: 'hidden', background: C.grayLight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -313,24 +340,19 @@ export default function MenuPage() {
                     : <><div style={{ fontSize: 30 }}>📷</div><div style={{ fontSize: 12, color: C.gray, marginTop: 6 }}>Appuyez pour ajouter une photo</div></>
                   }
                 </div>
-                <input ref={fileRef} type="file" accept="image/*"onChange={uploadImage} style={{ display: 'none' }} />
+                <input ref={fileRef} type="file" accept="image/*" onChange={uploadImage} style={{ display: 'none' }} />
               </div>
-              {/* Catégorie */}
               <select value={platForm.categorie_id} onChange={e => setPlatForm(p => ({ ...p, categorie_id: e.target.value }))}
                 style={{ width: '100%', padding: '11px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark, marginBottom: 10, background: C.white }}>
                 <option value="">Choisir une catégorie</option>
                 {categories.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
               </select>
-              {/* Nom */}
               <input value={platForm.nom} onChange={e => setPlatForm(p => ({ ...p, nom: e.target.value }))} placeholder="Nom du plat *"
                 style={{ width: '100%', padding: '11px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark, marginBottom: 10 }} />
-              {/* Description */}
               <textarea value={platForm.description} onChange={e => setPlatForm(p => ({ ...p, description: e.target.value }))} placeholder="Description (optionnel)" rows={2}
                 style={{ width: '100%', padding: '11px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark, marginBottom: 10, resize: 'none' }} />
-              {/* Prix */}
               <input type="number" value={platForm.prix} onChange={e => setPlatForm(p => ({ ...p, prix: e.target.value }))} placeholder="Prix (FCFA) *"
                 style={{ width: '100%', padding: '11px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark, marginBottom: 10 }} />
-              {/* Disponible */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: C.grayLight, borderRadius: 13 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>Disponible à la commande</span>
                 <button onClick={() => setPlatForm(p => ({ ...p, disponible: !p.disponible }))}
@@ -338,7 +360,6 @@ export default function MenuPage() {
                   <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: platForm.disponible ? 23 : 3, transition: 'left .2s', boxShadow: '0 1px 4px rgba(0,0,0,.2)' }}></div>
                 </button>
               </div>
-              {/* Boisson */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: C.grayLight, borderRadius: 13, marginTop: 10 }}>
                 <div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>🥤 C'est une boisson</span>
