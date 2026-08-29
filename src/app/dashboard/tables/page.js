@@ -2,18 +2,18 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useRestaurant } from '../layout'
 
 const C = {
   bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
   dark: '#3D0C11', gray: '#8A8A9A', grayLight: '#F0F0F5', border: '#E8E8F0',
   green: '#00C851', red: '#FF3B30', shadow: 'rgba(0,0,0,0.07)',
 }
-
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://maquisapp-xi.vercel.app'
 
 export default function TablesPage() {
   const router = useRouter()
-  const [restaurant, setRestaurant] = useState(null)
+  const { restaurant, restaurantId: ctxRestaurantId, loading: ctxLoading } = useRestaurant()
   const [tables, setTables] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -24,17 +24,17 @@ export default function TablesPage() {
   const [qrZoom, setQrZoom] = useState(null)
   const qrRefs = useRef({})
 
-  useEffect(() => { loadData() }, [])
+  // Le resto vient du contexte partagé (layout). On charge ici uniquement les
+  // tables, dès que le contexte a fourni le restaurantId.
+  useEffect(() => {
+    if (ctxLoading) return
+    if (!ctxRestaurantId) { setLoading(false); return }
+    loadTables(ctxRestaurantId).then(() => setLoading(false))
+  }, [ctxLoading, ctxRestaurantId])
 
-  async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/auth/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, restaurants(*)').eq('id', user.id).single()
-    if (!profile) { router.push('/auth/login'); return }
-    setRestaurant(profile.restaurants)
-    const { data: tbls } = await supabase.from('tables').select('*').eq('restaurant_id', profile.restaurant_id).order('numero')
+  async function loadTables(rid) {
+    const { data: tbls } = await supabase.from('tables').select('*').eq('restaurant_id', rid).order('numero')
     setTables(tbls || [])
-    setLoading(false)
   }
 
   function openModal(table = null) {
@@ -49,11 +49,9 @@ export default function TablesPage() {
   }
 
   async function saveTable() {
-    if (!form.numero) return
+    if (!form.numero || !restaurant) return
     setSaving(true)
     const slug = restaurant.slug
-    const menuUrl = `${APP_URL}/menu/${slug}/{TABLE_ID}`
-
     if (editingTable) {
       await supabase.from('tables').update({
         numero: Number(form.numero),
@@ -78,7 +76,7 @@ export default function TablesPage() {
     setSaving(false)
     setShowModal(false)
     setEditingTable(null)
-    loadData()
+    loadTables(ctxRestaurantId)
   }
 
   async function deleteTable(table) {
@@ -96,36 +94,29 @@ export default function TablesPage() {
     try {
       const url = table.qr_code_url || `${APP_URL}/menu/${restaurant.slug}/${table.id}`
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`
-
       const canvas = document.createElement('canvas')
       const ctx = canvas.getContext('2d')
       const img = new Image()
       img.crossOrigin = 'anonymous'
-
       await new Promise((resolve, reject) => {
         img.onload = resolve
         img.onerror = reject
         img.src = qrUrl
       })
-
       const QR_SIZE = 300
       const TEXT_HEIGHT = 60
       canvas.width = QR_SIZE
       canvas.height = QR_SIZE + TEXT_HEIGHT
-
       ctx.fillStyle = '#FFFFFF'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.drawImage(img, 0, 0, QR_SIZE, QR_SIZE)
-
       ctx.fillStyle = '#8B1A27'
       ctx.font = 'bold 22px Arial'
       ctx.textAlign = 'center'
       ctx.fillText(`Scannez - Table ${table.numero}`, QR_SIZE / 2, QR_SIZE + 22)
-
       ctx.fillStyle = '#8A8A9A'
       ctx.font = '14px Arial'
       ctx.fillText('Scanner pour commander', QR_SIZE / 2, QR_SIZE + 44)
-
       const link = document.createElement('a')
       link.download = `qr-table-${table.numero}.png`
       link.href = canvas.toDataURL('image/png')
@@ -145,7 +136,7 @@ export default function TablesPage() {
     occupees: tables.filter(t => t.statut === 'occupee').length,
   }
 
-  if (loading) return (
+  if (loading || ctxLoading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>🪑</div>
       <p style={{ color: C.primary, fontWeight: 600, fontSize: 14 }}>Chargement...</p>
@@ -154,9 +145,8 @@ export default function TablesPage() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
+    <div className="pg-root" style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { display: none; }
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.08)} }
@@ -164,10 +154,22 @@ export default function TablesPage() {
         @keyframes fadeIn { from{opacity:0} to{opacity:1} }
         .card:active { transform: scale(0.98); }
         .btn:active { transform: scale(0.97); }
+        .tables-grid { grid-template-columns: 1fr 1fr; }
+        .pg-desktop-head { display: none; }
+
+        @media (min-width: 900px) {
+          .pg-root { max-width: 1180px !important; margin: 0 !important; padding: 24px 28px 40px !important; }
+          .pg-mobile-header { display: none !important; }
+          .pg-bottomnav { display: none !important; }
+          .pg-block { margin-left: 0 !important; margin-right: 0 !important; }
+          .pg-block-first { margin-top: 0 !important; }
+          .pg-desktop-head { display: flex !important; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+          .tables-grid { grid-template-columns: 1fr 1fr 1fr !important; }
+        }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
+      {/* HEADER MOBILE */}
+      <div className="pg-mobile-header" style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => router.push('/dashboard')} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>
@@ -183,8 +185,20 @@ export default function TablesPage() {
         </div>
       </div>
 
+      {/* HEADER DESKTOP (titre + bouton ajouter) */}
+      <div className="pg-desktop-head">
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: C.dark }}>Tables & QR</div>
+          <div style={{ fontSize: 12, color: C.gray, marginTop: 2 }}>{stats.total} tables • {stats.libres} libres • {stats.occupees} occupées</div>
+        </div>
+        <button className="btn" onClick={() => openModal()}
+          style={{ background: C.primary, border: 'none', borderRadius: 12, padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+          + Ajouter une table
+        </button>
+      </div>
+
       {/* STATS */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '14px 16px 0' }}>
+      <div className="pg-block pg-block-first" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '14px 16px 0' }}>
         {[
           { val: stats.total, label: 'Total', color: '#5B8DEF', bg: '#EBF5FB' },
           { val: stats.libres, label: 'Libres', color: C.green, bg: '#E8F5E9' },
@@ -199,7 +213,7 @@ export default function TablesPage() {
 
       {/* FILTRES ZONES */}
       {zones.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 16px 0' }}>
+        <div className="pg-block" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 16px 0' }}>
           {['all', ...zones].map(z => (
             <button key={z} onClick={() => setFilterZone(z)}
               style={{ flexShrink: 0, padding: '6px 14px', borderRadius: 50, border: filterZone === z ? 'none' : `1.5px solid ${C.border}`, background: filterZone === z ? C.primary : C.white, color: filterZone === z ? '#fff' : C.dark, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
@@ -210,19 +224,17 @@ export default function TablesPage() {
       )}
 
       {/* GRILLE TABLES */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '14px 16px 0' }}>
+      <div className="pg-block tables-grid" style={{ display: 'grid', gap: 10, padding: '14px 16px 0' }}>
         {filtered.map(table => {
           const isOccupee = table.statut === 'occupee'
           const isInactif = !table.actif
           return (
             <div key={table.id} className="card"
               style={{ background: C.white, borderRadius: 16, padding: '14px', boxShadow: `0 2px 10px ${C.shadow}`, opacity: isInactif ? .55 : 1, transition: 'all .2s', border: isOccupee ? `2px solid ${C.primary}` : `1px solid ${C.border}` }}>
-              {/* Header table */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>T{table.numero}</div>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: isOccupee ? C.primary : isInactif ? C.gray : C.green }}></div>
               </div>
-              {/* Infos */}
               <div style={{ fontSize: 10, color: C.gray, marginBottom: 2 }}>{table.zone || 'Salle principale'}</div>
               {table.capacite && <div style={{ fontSize: 10, color: C.gray, marginBottom: 8 }}>👥 {table.capacite} pers.</div>}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -230,7 +242,6 @@ export default function TablesPage() {
                   {isOccupee ? 'Occupée' : isInactif ? 'Inactive' : 'Libre'}
                 </div>
               </div>
-              {/* QR Code miniature — cliquable pour zoom */}
               {table.qr_code_url && (
                 <img
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(table.qr_code_url)}`}
@@ -239,7 +250,6 @@ export default function TablesPage() {
                   style={{ width: '100%', height: 80, objectFit: 'contain', borderRadius: 8, background: C.grayLight, marginBottom: 10, cursor: 'zoom-in' }}
                 />
               )}
-              {/* Actions */}
               <button onClick={() => telechargerQR(table)}
                 style={{ width: '100%', background: C.primary, border: 'none', borderRadius: 10, padding: '10px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 ⬇️ Télécharger QR Table {table.numero}
@@ -256,7 +266,7 @@ export default function TablesPage() {
       </div>
 
       {/* BOTTOM NAV */}
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
+      <div className="pg-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
         {[
           { icon: '🏠', label: 'Accueil', path: '/dashboard' },
           { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
@@ -275,9 +285,9 @@ export default function TablesPage() {
 
       {/* MODAL TABLE */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'fadeIn .2s' }}>
           <div onClick={() => setShowModal(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }}></div>
-          <div style={{ position: 'relative', width: '100%', background: C.white, borderRadius: '22px 22px 0 0', padding: '18px 18px 40px', animation: 'slideUp .3s ease' }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', padding: '18px 18px 40px', animation: 'slideUp .3s ease' }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.dark, marginBottom: 16 }}>{editingTable ? `Modifier Table ${editingTable.numero}` : 'Nouvelle table'}</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               <div>
