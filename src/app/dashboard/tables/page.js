@@ -15,10 +15,11 @@ export default function TablesPage() {
   const router = useRouter()
   const { restaurant, restaurantId: ctxRestaurantId, loading: ctxLoading } = useRestaurant()
   const [tables, setTables] = useState([])
+  const [maxTarif, setMaxTarif] = useState(1) // plus grand ordre de tarif du resto (ADR 006)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingTable, setEditingTable] = useState(null)
-  const [form, setForm] = useState({ numero: '', capacite: '', zone: '', actif: true })
+  const [form, setForm] = useState({ numero: '', capacite: '', zone: '', actif: true, tarif_ordre: 1 })
   const [saving, setSaving] = useState(false)
   const [filterZone, setFilterZone] = useState('all')
   const [qrZoom, setQrZoom] = useState(null)
@@ -35,15 +36,29 @@ export default function TablesPage() {
   async function loadTables(rid) {
     const { data: tbls } = await supabase.from('tables').select('*').eq('restaurant_id', rid).order('numero')
     setTables(tbls || [])
+
+    // Détermine le plus grand ordre de tarif présent chez ce resto.
+    // Sert à n'afficher le sélecteur de niveau de prix QUE si multi-tarif réel.
+    const platIds = []
+    const { data: pls } = await supabase.from('plats').select('id').eq('restaurant_id', rid)
+    for (const p of (pls || [])) platIds.push(p.id)
+    if (platIds.length) {
+      const { data: tarifs } = await supabase
+        .from('plat_tarifs').select('ordre').in('plat_id', platIds)
+      const mx = (tarifs || []).reduce((m, t) => Math.max(m, t.ordre || 1), 1)
+      setMaxTarif(mx)
+    } else {
+      setMaxTarif(1)
+    }
   }
 
   function openModal(table = null) {
     if (table) {
       setEditingTable(table)
-      setForm({ numero: table.numero, capacite: table.capacite || '', zone: table.zone || '', actif: table.actif })
+      setForm({ numero: table.numero, capacite: table.capacite || '', zone: table.zone || '', actif: table.actif, tarif_ordre: table.tarif_ordre || 1 })
     } else {
       setEditingTable(null)
-      setForm({ numero: '', capacite: '', zone: '', actif: true })
+      setForm({ numero: '', capacite: '', zone: '', actif: true, tarif_ordre: 1 })
     }
     setShowModal(true)
   }
@@ -52,12 +67,15 @@ export default function TablesPage() {
     if (!form.numero || !restaurant) return
     setSaving(true)
     const slug = restaurant.slug
+    // tarif_ordre borné à [1, maxTarif] par sécurité (jamais < 1).
+    const tarifOrdre = Math.min(Math.max(Number(form.tarif_ordre) || 1, 1), Math.max(maxTarif, 1))
     if (editingTable) {
       await supabase.from('tables').update({
         numero: Number(form.numero),
         capacite: form.capacite ? Number(form.capacite) : null,
         zone: form.zone,
         actif: form.actif,
+        tarif_ordre: tarifOrdre,
       }).eq('id', editingTable.id)
     } else {
       const { data: newTable } = await supabase.from('tables').insert({
@@ -67,6 +85,7 @@ export default function TablesPage() {
         zone: form.zone,
         actif: form.actif,
         statut: 'libre',
+        tarif_ordre: tarifOrdre,
       }).select().single()
       if (newTable) {
         const url = `${APP_URL}/menu/${slug}/${newTable.id}`
@@ -135,6 +154,7 @@ export default function TablesPage() {
     libres: tables.filter(t => t.statut === 'libre' && t.actif).length,
     occupees: tables.filter(t => t.statut === 'occupee').length,
   }
+  const multiTarif = maxTarif > 1
 
   if (loading || ctxLoading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
@@ -237,10 +257,15 @@ export default function TablesPage() {
               </div>
               <div style={{ fontSize: 10, color: C.gray, marginBottom: 2 }}>{table.zone || 'Salle principale'}</div>
               {table.capacite && <div style={{ fontSize: 10, color: C.gray, marginBottom: 8 }}>👥 {table.capacite} pers.</div>}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 6, flexWrap: 'wrap' }}>
                 <div style={{ background: isOccupee ? C.primaryLight : '#E8F5E9', color: isOccupee ? C.primary : C.green, borderRadius: 20, padding: '3px 9px', fontSize: 9, fontWeight: 700 }}>
                   {isOccupee ? 'Occupée' : isInactif ? 'Inactive' : 'Libre'}
                 </div>
+                {multiTarif && (table.tarif_ordre || 1) > 1 && (
+                  <div style={{ background: C.primaryLight, color: C.primary, borderRadius: 20, padding: '3px 9px', fontSize: 9, fontWeight: 700 }}>
+                    Prix {table.tarif_ordre}
+                  </div>
+                )}
               </div>
               {table.qr_code_url && (
                 <img
@@ -288,6 +313,23 @@ export default function TablesPage() {
               <input value={form.zone} onChange={e => setForm(p => ({ ...p, zone: e.target.value }))} placeholder="ex: Terrasse, Salle, VIP..."
                 style={{ width: '100%', padding: '11px 13px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark }} />
             </div>
+
+            {/* NIVEAU DE PRIX — visible seulement si le resto a plusieurs tarifs (ADR 006) */}
+            {multiTarif && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: C.gray, marginBottom: 5, fontWeight: 600 }}>Niveau de prix appliqué</div>
+                <select value={form.tarif_ordre} onChange={e => setForm(p => ({ ...p, tarif_ordre: Number(e.target.value) }))}
+                  style={{ width: '100%', padding: '11px 13px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark, background: C.white }}>
+                  {Array.from({ length: maxTarif }, (_, i) => i + 1).map(n => (
+                    <option key={n} value={n}>Prix {n}</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 10, color: C.gray, marginTop: 5, lineHeight: 1.4 }}>
+                  Les commandes de cette table utilisent ce niveau de prix. Un plat sans ce tarif retombe sur le Prix 1.
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 13px', background: C.grayLight, borderRadius: 12, marginBottom: 16 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>Table active</span>
               <button onClick={() => setForm(p => ({ ...p, actif: !p.actif }))}
