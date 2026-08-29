@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useRestaurant } from '../layout'
 
 const C = {
   bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
@@ -63,7 +64,7 @@ function jouerSon(type) {
 
 export default function CommandesPage() {
   const router = useRouter()
-  const [restaurant, setRestaurant] = useState(null)
+  const { restaurant, restaurantId: ctxRestaurantId, loading: ctxLoading } = useRestaurant()
   const [commandes, setCommandes]   = useState([])
   const [loading, setLoading]       = useState(true)
   const [filter, setFilter]         = useState('all')
@@ -78,8 +79,16 @@ export default function CommandesPage() {
   const [bonCuisineData, setBonCuisineData] = useState(null)
   const [appelsServeur, setAppelsServeur] = useState([])
 
-  useEffect(() => { loadData() }, [])
+  // Le resto vient du contexte partagé (layout). On charge les commandes dès
+  // que le contexte a fourni le restaurantId.
+  useEffect(() => {
+    if (ctxLoading) return
+    if (!ctxRestaurantId) { setLoading(false); return }
+    refreshCommandes(ctxRestaurantId).then(() => setLoading(false))
+  }, [ctxLoading, ctxRestaurantId])
 
+  // Realtime : dépend du restaurant fourni par le contexte. Le cycle
+  // subscribe / removeChannel est identique à l'existant.
   useEffect(() => {
     if (!restaurant) return
     const ch = supabase.channel('commandes-live')
@@ -142,16 +151,6 @@ export default function CommandesPage() {
     const id = setInterval(() => setCommandes(prev => [...prev]), 30000)
     return () => clearInterval(id)
   }, [])
-
-  async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/auth/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, restaurants(*)').eq('id', user.id).single()
-    if (!profile) { router.push('/auth/login'); return }
-    setRestaurant(profile.restaurants)
-    await refreshCommandes(profile.restaurant_id)
-    setLoading(false)
-  }
 
   async function refreshCommandes(rid) {
     const { data: cmds } = await supabase
@@ -380,7 +379,7 @@ export default function CommandesPage() {
     return cmds[0]?.statut || 'en_attente'
   }
 
-  if (loading) return (
+  if (loading || ctxLoading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>📋</div>
       <p style={{ color: C.primary, fontWeight: 600, fontSize: 14 }}>Chargement...</p>
@@ -389,9 +388,8 @@ export default function CommandesPage() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
+    <div className="pg-root" style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", maxWidth: 480, margin: '0 auto', paddingBottom: 90 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { display: none; }
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.08)} }
@@ -401,16 +399,26 @@ export default function CommandesPage() {
         @keyframes slideIn { from{transform:translateX(120%);opacity:0} to{transform:translateX(0);opacity:1} }
         .cmd-card:active { transform: scale(0.98); }
         .btn:active { transform: scale(0.97); opacity:.9; }
+        .cmd-list { display: block; }
+        .pg-desktop-head { display: none; }
         @media print {
           body * { visibility: hidden; }
           #ticket-print, #ticket-print *, #ticket-cuisine-print, #ticket-cuisine-print * { visibility: visible; }
           #ticket-print, #ticket-cuisine-print { position: fixed; left: 0; top: 0; width: 80mm; font-size: 11px; font-family: monospace; }
           .no-print { display: none !important; }
         }
+        @media (min-width: 900px) {
+          .pg-root { max-width: 1180px !important; margin: 0 auto !important; padding: 24px 28px 40px !important; }
+          .pg-mobile-header { display: none !important; }
+          .pg-bottomnav { display: none !important; }
+          .pg-desktop-head { display: flex !important; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+          .cmd-list { display: grid !important; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+          .cmd-list > .cmd-card { margin-bottom: 0 !important; }
+        }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
+      {/* HEADER MOBILE */}
+      <div className="pg-mobile-header" style={{ background: C.dark, padding: '48px 16px 14px', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => router.push('/dashboard')} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>
@@ -423,6 +431,18 @@ export default function CommandesPage() {
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, animation: 'blink 1.5s infinite' }}></div>
             <span style={{ fontSize: 11, color: C.green, fontWeight: 700 }}>Live • {groupes.length} table{groupes.length > 1 ? 's' : ''}</span>
           </div>
+        </div>
+      </div>
+
+      {/* HEADER DESKTOP */}
+      <div className="pg-desktop-head">
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: C.dark }}>Commandes</div>
+          <div style={{ fontSize: 12, color: C.gray, marginTop: 2 }}>{restaurant?.nom}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#E8F5E9', borderRadius: 20, padding: '6px 14px' }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.green, animation: 'blink 1.5s infinite' }}></div>
+          <span style={{ fontSize: 12, color: C.green, fontWeight: 700 }}>Live • {groupes.length} table{groupes.length > 1 ? 's' : ''}</span>
         </div>
       </div>
 
@@ -450,7 +470,7 @@ export default function CommandesPage() {
       ))}
 
       {/* FILTRES */}
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 16px 0' }}>
+      <div className="pg-block" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 16px 0' }}>
         {[
           { id: 'all', label: 'Toutes' },
           { id: 'en_attente', label: '⏳ Attente' },
@@ -466,90 +486,94 @@ export default function CommandesPage() {
       </div>
 
       {/* LISTE GROUPÉE */}
-      <div style={{ padding: '12px 16px 0' }}>
+      <div className="pg-block" style={{ padding: '12px 16px 0' }}>
         {groupesFiltres.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: C.gray }}>
             <div style={{ fontSize: 44 }}>✅</div>
             <div style={{ fontSize: 14, fontWeight: 600, marginTop: 12 }}>Aucune commande en cours</div>
           </div>
-        ) : groupesFiltres.map((group, gi) => {
-          const statut = statutDominant(group.cmds)
-          const cfg = STATUT_CFG[statut] || STATUT_CFG.en_attente
-          const totalGroupe = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
-          const plusAncienne = group.cmds[0]?.created_at
-          const toutesServies = group.cmds.every(c => c.statut === 'servi')
-          return (
-            <div key={gi} className="cmd-card" style={{ background: C.white, borderRadius: 16, boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 12, overflow: 'hidden', transition: 'transform .15s', borderLeft: `4px solid ${cfg.color}` }}>
-              <div style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => ouvrirGroupe(group)}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 38, height: 38, borderRadius: 11, background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{cfg.icon}</div>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Table {group.table?.numero}</div>
-                      <div style={{ fontSize: 11, color: C.gray }}>
-                        {group.table?.zone || 'Salle'} •
-                        <span style={{ marginLeft: 4, color: group.cmds.length > 1 ? C.primary : C.gray, fontWeight: group.cmds.length > 1 ? 700 : 400 }}>
-                          {group.cmds.length} commande{group.cmds.length > 1 ? 's' : ''}
-                        </span>
+        ) : (
+          <div className="cmd-list">
+            {groupesFiltres.map((group, gi) => {
+              const statut = statutDominant(group.cmds)
+              const cfg = STATUT_CFG[statut] || STATUT_CFG.en_attente
+              const totalGroupe = group.cmds.reduce((s, c) => s + (c.total || 0), 0)
+              const plusAncienne = group.cmds[0]?.created_at
+              const toutesServies = group.cmds.every(c => c.statut === 'servi')
+              return (
+                <div key={gi} className="cmd-card" style={{ background: C.white, borderRadius: 16, boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 12, overflow: 'hidden', transition: 'transform .15s', borderLeft: `4px solid ${cfg.color}` }}>
+                  <div style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => ouvrirGroupe(group)}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 38, height: 38, borderRadius: 11, background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{cfg.icon}</div>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Table {group.table?.numero}</div>
+                          <div style={{ fontSize: 11, color: C.gray }}>
+                            {group.table?.zone || 'Salle'} •
+                            <span style={{ marginLeft: 4, color: group.cmds.length > 1 ? C.primary : C.gray, fontWeight: group.cmds.length > 1 ? 700 : 400 }}>
+                              {group.cmds.length} commande{group.cmds.length > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: C.dark }}>{formatCFA(totalGroupe)}</div>
+                        <div style={{ fontSize: 10, color: getTempsColor(plusAncienne), fontWeight: 600, marginTop: 2 }}>⏱ {getTemps(plusAncienne)}</div>
+                      </div>
+                    </div>
+                    {group.cmds.length > 1 && (
+                      <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {group.cmds.map((c, i) => {
+                          const cs = STATUT_CFG[c.statut]
+                          return cs ? (
+                            <div key={c.id} style={{ background: cs.bg, color: cs.color, borderRadius: 16, padding: '2px 8px', fontSize: 9, fontWeight: 700 }}>
+                              {cs.icon} Cmd {i + 1} — {cs.label}
+                            </div>
+                          ) : null
+                        })}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                      <div style={{ background: cfg.bg, color: cfg.color, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>{cfg.label}</div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {toutesServies && (
+                          <button className="btn" onClick={e => { e.stopPropagation(); ouvrirGroupe(group) }}
+                            style={{ background: C.green, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            💳 Encaisser
+                          </button>
+                        )}
+                        {!toutesServies && cfg.next && (
+                          <div style={{ display: 'flex', gap: 5 }}>
+                            <button className="btn" onClick={e => {
+                              e.stopPropagation()
+                              group.cmds.filter(c => c.statut === statut).forEach(c => changerStatut(c, cfg.next))
+                            }}
+                              style={{ background: cfg.color, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                              {cfg.nextLabel} →
+                            </button>
+                            {(statut === 'en_attente' || statut === 'valide') && (
+                              <button className="btn" onClick={e => {
+                                e.stopPropagation()
+                                group.cmds.filter(c => ['en_attente', 'valide'].includes(c.statut)).forEach(c => changerStatut(c, 'servi'))
+                              }}
+                                style={{ background: C.green, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                ⚡ Direct
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: C.dark }}>{formatCFA(totalGroupe)}</div>
-                    <div style={{ fontSize: 10, color: getTempsColor(plusAncienne), fontWeight: 600, marginTop: 2 }}>⏱ {getTemps(plusAncienne)}</div>
-                  </div>
                 </div>
-                {group.cmds.length > 1 && (
-                  <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {group.cmds.map((c, i) => {
-                      const cs = STATUT_CFG[c.statut]
-                      return cs ? (
-                        <div key={c.id} style={{ background: cs.bg, color: cs.color, borderRadius: 16, padding: '2px 8px', fontSize: 9, fontWeight: 700 }}>
-                          {cs.icon} Cmd {i + 1} — {cs.label}
-                        </div>
-                      ) : null
-                    })}
-                  </div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-                  <div style={{ background: cfg.bg, color: cfg.color, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>{cfg.label}</div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {toutesServies && (
-                      <button className="btn" onClick={e => { e.stopPropagation(); ouvrirGroupe(group) }}
-                        style={{ background: C.green, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-                        💳 Encaisser
-                      </button>
-                    )}
-                    {!toutesServies && cfg.next && (
-                      <div style={{ display: 'flex', gap: 5 }}>
-                        <button className="btn" onClick={e => {
-                          e.stopPropagation()
-                          group.cmds.filter(c => c.statut === statut).forEach(c => changerStatut(c, cfg.next))
-                        }}
-                          style={{ background: cfg.color, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-                          {cfg.nextLabel} →
-                        </button>
-                        {(statut === 'en_attente' || statut === 'valide') && (
-                          <button className="btn" onClick={e => {
-                            e.stopPropagation()
-                            group.cmds.filter(c => ['en_attente', 'valide'].includes(c.statut)).forEach(c => changerStatut(c, 'servi'))
-                          }}
-                            style={{ background: C.green, border: 'none', borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-                            ⚡ Direct
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        })}
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* BOTTOM NAV */}
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
+      <div className="pg-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
         {[
           { icon: '🏠', label: 'Accueil', path: '/dashboard' },
           { icon: '📋', label: 'Commandes', path: '/dashboard/commandes', active: true },
@@ -659,7 +683,7 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn .2s' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
-      <div style={{ position: 'relative', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+      <div style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
         <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
           <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
         </div>
@@ -780,7 +804,6 @@ function ModalDetailGroupe({ group, groupItems, loadingItems, updating, restaura
                   style={{ flex: 1, background: C.grayLight, border: 'none', borderRadius: 13, padding: '12px', fontSize: 13, fontWeight: 700, color: C.dark, cursor: 'pointer', fontFamily: 'inherit' }}>
                   Retour
                 </button>
-                {/* ─── FIX BUG 5 : utiliser handleCloturerEtTicket ─────────────── */}
                 <button onClick={handleCloturerEtTicket} disabled={!modePaiement || updating}
                   style={{ flex: 2, background: modePaiement ? C.primary : C.grayLight, border: 'none', borderRadius: 13, padding: '12px', fontSize: 13, fontWeight: 700, color: modePaiement ? '#fff' : C.gray, cursor: modePaiement ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: updating ? .7 : 1 }}>
                   {updating ? '...' : '✅ Confirmer et clôturer'}
@@ -800,8 +823,8 @@ function TicketCaisse({ data, onClose }) {
   const modePaie = MODES_PAIEMENT.find(m => m.id === modePaiement)
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }}>
-      <div style={{ width: '100%', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
         <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
           <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
         </div>
@@ -861,8 +884,8 @@ function BonCuisine({ data, restaurant, onImprimer, onIgnorer, onClose }) {
   const heureStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }}>
-      <div style={{ width: '100%', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
         <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
           <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
         </div>
