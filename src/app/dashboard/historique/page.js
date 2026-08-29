@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
 import { deriverTotalCommande, indexerItemsParCommande, grouperSessions } from '../../../lib/ventes';
+import { useRestaurant } from '../layout';
 
 const C = {
   bg: '#F5F5F5', white: '#FFFFFF', primary: '#8B1A27', primaryLight: '#FFF0EB',
@@ -24,7 +25,6 @@ function getMode(id) {
   return MODES.find(m => m.id === id) || { label: id || 'Non spécifié', icon: '❓', color: '#8A8A9A' };
 }
 
-// Résout l'affichage mode paiement d'une session (peut contenir plusieurs commandes/modes).
 function getModeSession(session) {
   if (!session.modes || session.modes.length === 0) return { label: 'Non spécifié', icon: '❓', color: '#8A8A9A' };
   if (session.modes.length === 1) return getMode(session.modes[0]);
@@ -94,7 +94,7 @@ function exportCSV(commandes, tables, itemsParCmd) {
     ]);
   });
   const csv = rows.map(r => r.join(';')).join('\n');
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob(['' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = `maquisapp_historique_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
@@ -103,7 +103,7 @@ function exportCSV(commandes, tables, itemsParCmd) {
 
 export default function HistoriquePage() {
   const router = useRouter();
-  const [restaurant, setRestaurant] = useState(null);
+  const { restaurant, restaurantId: ctxRestaurantId, loading: ctxLoading } = useRestaurant();
   const [tables, setTables]         = useState([]);
   const [commandes, setCommandes]   = useState([]);
   const [itemsParCmd, setItemsParCmd] = useState({});
@@ -112,30 +112,29 @@ export default function HistoriquePage() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo]     = useState('');
   const [showCustom, setShowCustom] = useState(false);
-  const [filterMode, setFilterMode] = useState('all'); // filtre par mode paiement
-  const [showDetail, setShowDetail] = useState(null);  // session sélectionnée
+  const [filterMode, setFilterMode] = useState('all');
+  const [showDetail, setShowDetail] = useState(null);
 
+  // Le resto vient du contexte partagé (layout). On charge ici les tables dès
+  // que le contexte a fourni le restaurantId.
   useEffect(() => {
+    if (ctxLoading) return;
+    if (!ctxRestaurantId) { setLoading(false); return; }
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.push('/auth/login'); return; }
-      const { data: profile } = await supabase.from('profiles').select('restaurant_id').eq('id', session.user.id).single();
-      if (!profile) { router.push('/auth/login'); return; }
-      const { data: resto } = await supabase.from('restaurants').select('*').eq('id', profile.restaurant_id).single();
-      setRestaurant(resto);
-      const { data: ts } = await supabase.from('tables').select('*').eq('restaurant_id', profile.restaurant_id);
+      const { data: ts } = await supabase.from('tables').select('*').eq('restaurant_id', ctxRestaurantId);
       setTables(ts || []);
       setLoading(false);
     })();
-  }, []);
+  }, [ctxLoading, ctxRestaurantId]);
 
+  // Charge les commandes clôturées de la période dès que le resto est prêt.
   useEffect(() => {
-    if (!restaurant) return;
+    if (!ctxRestaurantId) return;
     (async () => {
       const { from, to } = getPeriodRange(period, customFrom, customTo);
       const { data: cmds } = await supabase.from('commandes')
         .select('id, table_id, mode_paiement, created_at, statut, cloture_id')
-        .eq('restaurant_id', restaurant.id)
+        .eq('restaurant_id', ctxRestaurantId)
         .eq('statut', 'cloture')
         .gte('created_at', from + 'T00:00:00')
         .lte('created_at', to + 'T23:59:59')
@@ -151,14 +150,13 @@ export default function HistoriquePage() {
       setCommandes(cmdsList);
       setItemsParCmd(indexerItemsParCommande(items));
     })();
-  }, [restaurant, period, customFrom, customTo]);
+  }, [ctxRestaurantId, period, customFrom, customTo]);
 
   // ── Stats (toutes dérivées de commande_items) ────────────────────────────────
   const ca = commandes.reduce((s, c) => s + deriverTotalCommande(itemsParCmd[c.id]), 0);
   const nbCommandes = commandes.length;
   const panierMoyen = nbCommandes > 0 ? ca / nbCommandes : 0;
 
-  // Totaux par mode de paiement (montants)
   const totauxParMode = {};
   commandes.forEach(c => {
     const m = c.mode_paiement || 'non_specifie';
@@ -168,7 +166,6 @@ export default function HistoriquePage() {
     totauxParMode[m].total += montant;
   });
 
-  // Bar chart
   const byDay = {};
   commandes.forEach(c => {
     const d = c.created_at.slice(0, 10);
@@ -183,14 +180,13 @@ export default function HistoriquePage() {
     cur.setDate(cur.getDate() + 1);
   }
 
-  // Filtre mode paiement (appliqué AVANT le regroupement en sessions)
   const commandesFiltrees = filterMode === 'all'
     ? commandes
     : commandes.filter(c => (c.mode_paiement || 'non_specifie') === filterMode);
 
   const sessions = grouperSessions(commandesFiltrees, itemsParCmd);
 
-  if (loading) return (
+  if (loading || ctxLoading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
       <div style={{ fontSize: 44, animation: 'pulse 1s infinite' }}>📊</div>
       <p style={{ color: C.primary, fontWeight: 600, fontSize: 14 }}>Chargement...</p>
@@ -199,19 +195,33 @@ export default function HistoriquePage() {
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", paddingBottom: 90 }}>
+    <div className="pg-root" style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', system-ui, sans-serif", paddingBottom: 90 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { display: none; }
         @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
         @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.08)} }
         .row-cmd:active { background: #F5F5F5; }
         .btn:active { transform: scale(0.97); }
+        .hist-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+        .hist-grid { display: flex; flex-direction: column; gap: 12px; }
+        .pg-desktop-head { display: none; }
+
+        @media (min-width: 900px) {
+          .pg-root { max-width: 1180px !important; margin: 0 auto !important; padding: 24px 28px 40px !important; }
+          .pg-mobile-header { display: none !important; }
+          .pg-bottomnav { display: none !important; }
+          .pg-desktop-head { display: block; margin-bottom: 18px; }
+          .hist-body { padding: 0 !important; }
+          .hist-grid { display: grid !important; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+          .hist-grid > .hist-col-left { display: flex; flex-direction: column; gap: 12px; }
+          .hist-grid > .hist-col-right { display: flex; flex-direction: column; gap: 12px; }
+        }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ background: C.dark, padding: '48px 16px 0', position: 'sticky', top: 0, zIndex: 100 }}>
+      {/* HEADER MOBILE */}
+      <div className="pg-mobile-header" style={{ background: C.dark, padding: '48px 16px 0', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => router.push('/dashboard')} style={{ background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 10, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>←</button>
@@ -226,7 +236,6 @@ export default function HistoriquePage() {
           </button>
         </div>
 
-        {/* Filtres période */}
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '0 0 12px' }}>
           {PERIODS.map(p => (
             <button key={p.id} onClick={() => { setPeriod(p.id); setShowCustom(p.id === 'custom'); }}
@@ -236,7 +245,6 @@ export default function HistoriquePage() {
           ))}
         </div>
 
-        {/* Dates custom */}
         {showCustom && (
           <div style={{ display: 'flex', gap: 8, padding: '0 0 12px' }}>
             <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
@@ -248,144 +256,175 @@ export default function HistoriquePage() {
         )}
       </div>
 
-      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-        {/* CA PRINCIPAL */}
-        <div style={{ background: C.dark, borderRadius: 20, padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,.15)' }}>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>Chiffre d'affaires</div>
-          <div style={{ fontSize: 30, fontWeight: 800, color: C.white, marginBottom: 2 }}>{fmtCFA(ca)}</div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)' }}>{nbCommandes} commande{nbCommandes !== 1 ? 's' : ''} clôturée{nbCommandes !== 1 ? 's' : ''}</div>
-          {chartData.length > 1 && <div style={{ marginTop: 14 }}><BarChart data={chartData} /></div>}
-        </div>
-
-        {/* ACCÈS VENTES PAR ARTICLE */}
-        <button className="btn" onClick={() => router.push('/dashboard/historique/articles')}
-          style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.white, borderRadius: 16, padding: '14px 16px', boxShadow: `0 2px 8px ${C.shadow}`, border: 'none', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'left' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📊</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>Ventes par article</div>
-            <div style={{ fontSize: 11, color: C.gray }}>Top des articles les plus vendus</div>
+      {/* HEADER DESKTOP (titre + CSV + filtres période) */}
+      <div className="pg-desktop-head">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.dark }}>Historique</div>
+            <div style={{ fontSize: 12, color: C.gray, marginTop: 2 }}>{nbCommandes} commande{nbCommandes !== 1 ? 's' : ''} sur la période</div>
           </div>
-          <span style={{ fontSize: 16, color: C.gray }}>›</span>
-        </button>
-
-        {/* KPIs */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {[
-            { label: 'Panier moyen', value: fmtCFA(panierMoyen), color: C.purple, bg: '#F5F3FF' },
-            { label: 'Commandes/jour', value: period === 'today' ? nbCommandes : (chartData.length > 0 ? (nbCommandes / chartData.length).toFixed(1) : 0), color: C.primary, bg: C.primaryLight },
-          ].map(k => (
-            <div key={k.label} style={{ background: C.white, borderRadius: 16, padding: '14px', boxShadow: `0 2px 8px ${C.shadow}`, border: `1px solid ${k.color}22` }}>
-              <div style={{ fontSize: 10, color: C.gray, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>{k.label}</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.value}</div>
-            </div>
+          <button className="btn" onClick={() => exportCSV(commandes, tables, itemsParCmd)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, color: C.dark, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            ⬇️ Exporter CSV
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {PERIODS.map(p => (
+            <button key={p.id} onClick={() => { setPeriod(p.id); setShowCustom(p.id === 'custom'); }}
+              style={{ padding: '7px 16px', borderRadius: 50, border: `1.5px solid ${period === p.id ? C.primary : C.border}`, background: period === p.id ? C.primary : C.white, color: period === p.id ? '#fff' : C.dark, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              {p.label}
+            </button>
           ))}
         </div>
-
-        {/* TOTAUX PAR MODE DE PAIEMENT */}
-        {Object.keys(totauxParMode).length > 0 && (
-          <div style={{ background: C.white, borderRadius: 18, boxShadow: `0 2px 10px ${C.shadow}`, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Encaissements par mode</div>
-              <div style={{ fontSize: 11, color: C.gray }}>{nbCommandes} total</div>
-            </div>
-            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {Object.entries(totauxParMode).sort((a, b) => b[1].total - a[1].total).map(([modeId, stats]) => {
-                const cfg = getMode(modeId);
-                const pct = ca > 0 ? (stats.total / ca) * 100 : 0;
-                return (
-                  <div key={modeId}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 18 }}>{cfg.icon}</span>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{cfg.label}</div>
-                          <div style={{ fontSize: 10, color: C.gray }}>{stats.count} commande{stats.count > 1 ? 's' : ''}</div>
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: cfg.color }}>{fmtCFA(stats.total)}</div>
-                        <div style={{ fontSize: 10, color: C.gray }}>{pct.toFixed(0)}%</div>
-                      </div>
-                    </div>
-                    {/* Barre de progression */}
-                    <div style={{ height: 5, background: C.grayLight, borderRadius: 99, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', background: cfg.color, borderRadius: 99, width: `${pct}%`, transition: 'width .4s ease' }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+        {showCustom && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, maxWidth: 420 }}>
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+              style={{ flex: 1, padding: '9px 11px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, color: C.dark, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
+            <span style={{ color: C.gray, alignSelf: 'center' }}>→</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+              style={{ flex: 1, padding: '9px 11px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, color: C.dark, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
           </div>
         )}
+      </div>
 
-        {/* FILTRE PAR MODE + LISTE DES SESSIONS */}
-        <div style={{ background: C.white, borderRadius: 18, boxShadow: `0 2px 10px ${C.shadow}`, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Détail</div>
-              <span style={{ fontSize: 11, color: C.gray }}>{sessions.length} entrée{sessions.length !== 1 ? 's' : ''}</span>
+      <div className="hist-body">
+        <div className="hist-grid">
+          {/* COLONNE GAUCHE : CA + chart, KPIs, encaissements par mode */}
+          <div className="hist-col-left">
+            <div style={{ background: C.dark, borderRadius: 20, padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,.15)' }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>Chiffre d'affaires</div>
+              <div style={{ fontSize: 30, fontWeight: 800, color: C.white, marginBottom: 2 }}>{fmtCFA(ca)}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)' }}>{nbCommandes} commande{nbCommandes !== 1 ? 's' : ''} clôturée{nbCommandes !== 1 ? 's' : ''}</div>
+              {chartData.length > 1 && <div style={{ marginTop: 14 }}><BarChart data={chartData} /></div>}
             </div>
-            {/* Chips filtre mode */}
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-              <button onClick={() => setFilterMode('all')}
-                style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 50, border: filterMode === 'all' ? 'none' : `1.5px solid ${C.border}`, background: filterMode === 'all' ? C.dark : C.white, color: filterMode === 'all' ? '#fff' : C.dark, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                Tous
-              </button>
-              {Object.keys(totauxParMode).map(modeId => {
-                const cfg = getMode(modeId);
-                const active = filterMode === modeId;
-                return (
-                  <button key={modeId} onClick={() => setFilterMode(modeId)}
-                    style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 50, border: active ? 'none' : `1.5px solid ${C.border}`, background: active ? cfg.color : C.white, color: active ? '#fff' : C.dark, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                    {cfg.icon} {cfg.label}
-                  </button>
-                );
-              })}
+
+            <button className="btn" onClick={() => router.push('/dashboard/historique/articles')}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.white, borderRadius: 16, padding: '14px 16px', boxShadow: `0 2px 8px ${C.shadow}`, border: 'none', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'left' }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📊</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>Ventes par article</div>
+                <div style={{ fontSize: 11, color: C.gray }}>Top des articles les plus vendus</div>
+              </div>
+              <span style={{ fontSize: 16, color: C.gray }}>›</span>
+            </button>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {[
+                { label: 'Panier moyen', value: fmtCFA(panierMoyen), color: C.purple, bg: '#F5F3FF' },
+                { label: 'Commandes/jour', value: period === 'today' ? nbCommandes : (chartData.length > 0 ? (nbCommandes / chartData.length).toFixed(1) : 0), color: C.primary, bg: C.primaryLight },
+              ].map(k => (
+                <div key={k.label} style={{ background: C.white, borderRadius: 16, padding: '14px', boxShadow: `0 2px 8px ${C.shadow}`, border: `1px solid ${k.color}22` }}>
+                  <div style={{ fontSize: 10, color: C.gray, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>{k.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.value}</div>
+                </div>
+              ))}
             </div>
+
+            {Object.keys(totauxParMode).length > 0 && (
+              <div style={{ background: C.white, borderRadius: 18, boxShadow: `0 2px 10px ${C.shadow}`, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Encaissements par mode</div>
+                  <div style={{ fontSize: 11, color: C.gray }}>{nbCommandes} total</div>
+                </div>
+                <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {Object.entries(totauxParMode).sort((a, b) => b[1].total - a[1].total).map(([modeId, stats]) => {
+                    const cfg = getMode(modeId);
+                    const pct = ca > 0 ? (stats.total / ca) * 100 : 0;
+                    return (
+                      <div key={modeId}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 18 }}>{cfg.icon}</span>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{cfg.label}</div>
+                              <div style={{ fontSize: 10, color: C.gray }}>{stats.count} commande{stats.count > 1 ? 's' : ''}</div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: cfg.color }}>{fmtCFA(stats.total)}</div>
+                            <div style={{ fontSize: 10, color: C.gray }}>{pct.toFixed(0)}%</div>
+                          </div>
+                        </div>
+                        <div style={{ height: 5, background: C.grayLight, borderRadius: 99, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', background: cfg.color, borderRadius: 99, width: `${pct}%`, transition: 'width .4s ease' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
-          {sessions.length === 0 ? (
-            <div style={{ padding: 32, textAlign: 'center', color: C.gray, fontSize: 13 }}>
-              <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
-              Aucune commande sur cette période
-            </div>
-          ) : (
-            <div>
-              {sessions.map((s, i) => {
-                const t = tables.find(x => x.id === s.tableId);
-                const cfg = getModeSession(s);
-                return (
-                  <div key={`${s.tableId}-${s.debut}`} className="row-cmd" onClick={() => setShowDetail(s)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: i < sessions.length - 1 ? `1px solid ${C.border}` : 'none', cursor: 'pointer', transition: 'background .15s' }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{cfg.icon}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        Table {t?.numero || '?'}
-                        {s.nbCommandes > 1 && (
-                          <span style={{ fontSize: 9, fontWeight: 700, color: C.primary, background: C.primaryLight, borderRadius: 20, padding: '2px 6px' }}>
-                            {s.nbCommandes} commandes
-                          </span>
-                        )}
+          {/* COLONNE DROITE : filtre mode + liste sessions */}
+          <div className="hist-col-right">
+            <div style={{ background: C.white, borderRadius: 18, boxShadow: `0 2px 10px ${C.shadow}`, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Détail</div>
+                  <span style={{ fontSize: 11, color: C.gray }}>{sessions.length} entrée{sessions.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+                  <button onClick={() => setFilterMode('all')}
+                    style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 50, border: filterMode === 'all' ? 'none' : `1.5px solid ${C.border}`, background: filterMode === 'all' ? C.dark : C.white, color: filterMode === 'all' ? '#fff' : C.dark, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Tous
+                  </button>
+                  {Object.keys(totauxParMode).map(modeId => {
+                    const cfg = getMode(modeId);
+                    const active = filterMode === modeId;
+                    return (
+                      <button key={modeId} onClick={() => setFilterMode(modeId)}
+                        style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 50, border: active ? 'none' : `1.5px solid ${C.border}`, background: active ? cfg.color : C.white, color: active ? '#fff' : C.dark, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                        {cfg.icon} {cfg.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {sessions.length === 0 ? (
+                <div style={{ padding: 32, textAlign: 'center', color: C.gray, fontSize: 13 }}>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
+                  Aucune commande sur cette période
+                </div>
+              ) : (
+                <div>
+                  {sessions.map((s, i) => {
+                    const t = tables.find(x => x.id === s.tableId);
+                    const cfg = getModeSession(s);
+                    return (
+                      <div key={`${s.tableId}-${s.debut}`} className="row-cmd" onClick={() => setShowDetail(s)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: i < sessions.length - 1 ? `1px solid ${C.border}` : 'none', cursor: 'pointer', transition: 'background .15s' }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{cfg.icon}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            Table {t?.numero || '?'}
+                            {s.nbCommandes > 1 && (
+                              <span style={{ fontSize: 9, fontWeight: 700, color: C.primary, background: C.primaryLight, borderRadius: 20, padding: '2px 6px' }}>
+                                {s.nbCommandes} commandes
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>
+                            {fmtDate(s.fin)} · {fmtTime(s.debut)}{s.nbCommandes > 1 ? `–${fmtTime(s.fin)}` : ''} · {cfg.label}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{fmtCFA(s.total)}</div>
+                          <div style={{ fontSize: 10, color: C.gray, marginTop: 1 }}>›</div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: C.gray, marginTop: 1 }}>
-                        {fmtDate(s.fin)} · {fmtTime(s.debut)}{s.nbCommandes > 1 ? `–${fmtTime(s.fin)}` : ''} · {cfg.label}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{fmtCFA(s.total)}</div>
-                      <div style={{ fontSize: 10, color: C.gray, marginTop: 1 }}>›</div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
       {/* BOTTOM NAV */}
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
+      <div className="pg-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
         {[
           { icon: '🏠', label: 'Accueil', path: '/dashboard' },
           { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
@@ -404,9 +443,9 @@ export default function HistoriquePage() {
 
       {/* MODAL DÉTAIL SESSION */}
       {showDetail && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', animation: 'fadeIn .2s' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'fadeIn .2s' }}>
           <div onClick={() => setShowDetail(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
-          <div style={{ position: 'relative', width: '100%', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '80vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '80vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
               <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }}></div>
             </div>
