@@ -10,11 +10,15 @@ const C = {
   green: '#00C851', red: '#FF3B30', shadow: 'rgba(0,0,0,0.07)',
 }
 
+// Fabrique une ligne de tarif de formulaire.
+const mkTarif = (prix = '', ordre = 1) => ({ prix: prix === null || prix === undefined ? '' : String(prix), ordre })
+
 export default function MenuPage() {
   const router = useRouter()
   const { restaurant, restaurantId: ctxRestaurantId, loading: ctxLoading } = useRestaurant()
   const [categories, setCategories] = useState([])
   const [plats, setPlats] = useState([])
+  const [tarifsByPlat, setTarifsByPlat] = useState({}) // { plat_id: [{id, prix, ordre, actif}] }
   const [loading, setLoading] = useState(true)
   const [activeCat, setActiveCat] = useState(null)
   const [showCatModal, setShowCatModal] = useState(false)
@@ -22,7 +26,7 @@ export default function MenuPage() {
   const [editingCat, setEditingCat] = useState(null)
   const [editingPlat, setEditingPlat] = useState(null)
   const [catForm, setCatForm] = useState({ nom: '' })
-  const [platForm, setPlatForm] = useState({ nom: '', description: '', prix: '', image_url: '', image_preview: '', disponible: true, categorie_id: '', est_boisson: false, stock_actif: false, stock_actuel: 0, stock_alerte: 10 })
+  const [platForm, setPlatForm] = useState({ nom: '', description: '', tarifs: [mkTarif('', 1)], image_url: '', image_preview: '', disponible: true, categorie_id: '', est_boisson: false, stock_actif: false, stock_actuel: 0, stock_alerte: 10 })
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
 
@@ -42,6 +46,32 @@ export default function MenuPage() {
     setCategories(cats || [])
     setPlats(pls || [])
     if (cats?.length) setActiveCat(prev => prev || cats[0].id)
+
+    // Charge tous les tarifs des plats du resto en une requête, indexés par plat_id.
+    const platIds = (pls || []).map(p => p.id)
+    if (platIds.length) {
+      const { data: tarifs } = await supabase
+        .from('plat_tarifs')
+        .select('*')
+        .in('plat_id', platIds)
+        .order('ordre')
+      const map = {}
+      for (const t of (tarifs || [])) {
+        if (!map[t.plat_id]) map[t.plat_id] = []
+        map[t.plat_id].push(t)
+      }
+      setTarifsByPlat(map)
+    } else {
+      setTarifsByPlat({})
+    }
+  }
+
+  // Retourne les tarifs actifs d'un plat, triés par ordre. Fallback sur plats.prix
+  // si aucun tarif (plat legacy non encore backfillé — ne devrait pas arriver).
+  function tarifsDuPlat(plat) {
+    const list = (tarifsByPlat[plat.id] || []).filter(t => t.actif).sort((a, b) => a.ordre - b.ordre)
+    if (list.length) return list
+    return [{ id: null, plat_id: plat.id, prix: plat.prix, ordre: 1, actif: true }]
   }
 
   // ── CATÉGORIES ────────────────────────────────────────────────────────────
@@ -71,29 +101,108 @@ export default function MenuPage() {
   // ── PLATS ─────────────────────────────────────────────────────────────────
   function openPlatModal(plat = null) {
     if (plat) {
+      const tlist = tarifsDuPlat(plat)
       setEditingPlat(plat)
-      setPlatForm({ nom: plat.nom, description: plat.description || '', prix: plat.prix, image_url: plat.image_url || '', image_preview: '', disponible: plat.disponible, categorie_id: plat.categorie_id, est_boisson: plat.est_boisson || false, stock_actif: plat.stock_actif || false, stock_actuel: plat.stock_actuel ?? 0, stock_alerte: plat.stock_alerte ?? 10 })
+      setPlatForm({
+        nom: plat.nom, description: plat.description || '',
+        tarifs: tlist.map(t => mkTarif(t.prix, t.ordre)),
+        image_url: plat.image_url || '', image_preview: '',
+        disponible: plat.disponible, categorie_id: plat.categorie_id,
+        est_boisson: plat.est_boisson || false, stock_actif: plat.stock_actif || false,
+        stock_actuel: plat.stock_actuel ?? 0, stock_alerte: plat.stock_alerte ?? 10,
+      })
     } else {
       setEditingPlat(null)
-      setPlatForm({ nom: '', description: '', prix: '', image_url: '', image_preview: '', disponible: true, categorie_id: activeCat || '', est_boisson: false, stock_actif: false, stock_actuel: 0, stock_alerte: 10 })
+      setPlatForm({ nom: '', description: '', tarifs: [mkTarif('', 1)], image_url: '', image_preview: '', disponible: true, categorie_id: activeCat || '', est_boisson: false, stock_actif: false, stock_actuel: 0, stock_alerte: 10 })
     }
     setShowPlatModal(true)
   }
 
+  // Ajoute une ligne de tarif (ordre = max + 1).
+  function addTarif() {
+    setPlatForm(p => {
+      const nextOrdre = p.tarifs.length ? Math.max(...p.tarifs.map(t => t.ordre)) + 1 : 1
+      return { ...p, tarifs: [...p.tarifs, mkTarif('', nextOrdre)] }
+    })
+  }
+
+  // Retire une ligne de tarif. Jamais la première (ordre 1 obligatoire).
+  function removeTarif(idx) {
+    setPlatForm(p => {
+      if (p.tarifs.length <= 1) return p
+      const kept = p.tarifs.filter((_, i) => i !== idx)
+      // Renumérote pour garder des ordres contigus 1..N (invariant ADR 006).
+      const renum = kept.map((t, i) => ({ ...t, ordre: i + 1 }))
+      return { ...p, tarifs: renum }
+    })
+  }
+
+  function setTarifPrix(idx, val) {
+    setPlatForm(p => ({ ...p, tarifs: p.tarifs.map((t, i) => i === idx ? { ...t, prix: val } : t) }))
+  }
+
   async function savePlat() {
-    if (!platForm.nom.trim() || !platForm.prix || !restaurant) return
+    if (!platForm.nom.trim() || !restaurant) return
+    // Tarifs valides = prix numérique renseigné. Au moins l'ordre 1 requis.
+    const tarifsValides = platForm.tarifs
+      .map((t, i) => ({ prix: Number(t.prix), ordre: i + 1 }))
+      .filter(t => t.prix !== '' && !Number.isNaN(t.prix))
+    if (!tarifsValides.length || Number.isNaN(Number(platForm.tarifs[0].prix))) {
+      alert('Renseigne au moins le premier prix.')
+      return
+    }
     setSaving(true)
-    const payload = { nom: platForm.nom, description: platForm.description, prix: Number(platForm.prix), image_url: platForm.image_url, disponible: platForm.disponible, categorie_id: platForm.categorie_id || activeCat, est_boisson: platForm.est_boisson, stock_actif: platForm.stock_actif, stock_actuel: Number(platForm.stock_actuel), stock_alerte: Number(platForm.stock_alerte) }
+
+    const prixOrdre1 = tarifsValides[0].prix // fallback legacy plats.prix (ADR 006)
+    const payload = {
+      nom: platForm.nom, description: platForm.description,
+      prix: prixOrdre1,
+      image_url: platForm.image_url, disponible: platForm.disponible,
+      categorie_id: platForm.categorie_id || activeCat,
+      est_boisson: platForm.est_boisson, stock_actif: platForm.stock_actif,
+      stock_actuel: Number(platForm.stock_actuel), stock_alerte: Number(platForm.stock_alerte),
+    }
+
+    let platId = editingPlat?.id
     if (editingPlat) {
       await supabase.from('plats').update(payload).eq('id', editingPlat.id)
     } else {
       const ordre = plats.filter(p => p.categorie_id === (platForm.categorie_id || activeCat)).length + 1
-      await supabase.from('plats').insert({ ...payload, restaurant_id: restaurant.id, ordre })
+      const { data: inserted } = await supabase
+        .from('plats')
+        .insert({ ...payload, restaurant_id: restaurant.id, ordre })
+        .select()
+        .single()
+      platId = inserted?.id
     }
+
+    if (platId) {
+      await syncTarifs(platId, tarifsValides)
+    }
+
     setSaving(false)
     setShowPlatModal(false)
     setEditingPlat(null)
     loadMenu(ctxRestaurantId)
+  }
+
+  // Synchronise plat_tarifs pour un plat SANS casser les liens historiques :
+  // - upsert par (plat_id, ordre) → conserve les id des tarifs gardés
+  //   (donc commande_items.tarif_id reste valide)
+  // - supprime uniquement les ordres réellement retirés (FK SET NULL protège l'historique)
+  async function syncTarifs(platId, tarifsValides) {
+    // 1. Upsert des tarifs saisis, sur conflit (plat_id, ordre).
+    const rows = tarifsValides.map(t => ({ plat_id: platId, prix: t.prix, ordre: t.ordre, actif: true }))
+    await supabase.from('plat_tarifs').upsert(rows, { onConflict: 'plat_id,ordre' })
+
+    // 2. Supprime les ordres qui n'existent plus dans le formulaire.
+    const ordresGardes = tarifsValides.map(t => t.ordre)
+    const { data: existants } = await supabase
+      .from('plat_tarifs').select('id, ordre').eq('plat_id', platId)
+    const aSupprimer = (existants || []).filter(e => !ordresGardes.includes(e.ordre)).map(e => e.id)
+    if (aSupprimer.length) {
+      await supabase.from('plat_tarifs').delete().in('id', aSupprimer)
+    }
   }
 
   async function toggleDispo(plat) {
@@ -103,8 +212,11 @@ export default function MenuPage() {
 
   async function deletePlat(plat) {
     if (!confirm(`Supprimer "${plat.nom}" ?`)) return
+    // plat_tarifs a ON DELETE CASCADE → les tarifs partent avec le plat.
+    // commande_items.tarif_id a ON DELETE SET NULL → l'historique survit.
     await supabase.from('plats').delete().eq('id', plat.id)
     setPlats(prev => prev.filter(p => p.id !== plat.id))
+    setTarifsByPlat(prev => { const n = { ...prev }; delete n[plat.id]; return n })
   }
 
   async function uploadImage(e) {
@@ -247,7 +359,11 @@ export default function MenuPage() {
           </div>
         ) : (
           <div className="menu-plats">
-            {platsDeCat.map(plat => (
+            {platsDeCat.map(plat => {
+              const tlist = tarifsDuPlat(plat)
+              const multi = tlist.length > 1
+              const prixMin = Math.min(...tlist.map(t => Number(t.prix)))
+              return (
               <div key={plat.id} className="plat-card" style={{ background: C.white, borderRadius: 16, overflow: 'hidden', display: 'flex', boxShadow: `0 2px 10px ${C.shadow}`, marginBottom: 10, opacity: plat.disponible ? 1 : .6, transition: 'all .2s' }}>
                 {plat.image_url
                   ? <img src={plat.image_url} alt="" style={{ width: 88, height: 88, objectFit: 'cover', flexShrink: 0 }} />
@@ -268,7 +384,16 @@ export default function MenuPage() {
                     {plat.description && <div style={{ fontSize: 11, color: C.gray, marginTop: 2, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{plat.description}</div>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{plat.prix.toLocaleString()} F</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>
+                        {multi ? `À partir de ${prixMin.toLocaleString()} F` : `${Number(tlist[0].prix).toLocaleString()} F`}
+                      </div>
+                      {multi && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: C.primary, background: C.primaryLight, borderRadius: 8, padding: '2px 7px' }}>
+                          {tlist.length} prix
+                        </span>
+                      )}
+                    </div>
                     <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
                       <div onClick={() => toggleDispo(plat)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: plat.disponible ? 'rgba(0,200,81,0.12)' : 'rgba(255,59,48,0.12)', color: plat.disponible ? C.green : C.red, border: `1px solid ${plat.disponible ? 'rgba(0,200,81,0.3)' : 'rgba(255,59,48,0.3)'}` }}>
@@ -280,7 +405,8 @@ export default function MenuPage() {
                   </div>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -333,8 +459,27 @@ export default function MenuPage() {
                 style={{ width: '100%', padding: '11px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark, marginBottom: 10 }} />
               <textarea value={platForm.description} onChange={e => setPlatForm(p => ({ ...p, description: e.target.value }))} placeholder="Description (optionnel)" rows={2}
                 style={{ width: '100%', padding: '11px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark, marginBottom: 10, resize: 'none' }} />
-              <input type="number" value={platForm.prix} onChange={e => setPlatForm(p => ({ ...p, prix: e.target.value }))} placeholder="Prix (FCFA) *"
-                style={{ width: '100%', padding: '11px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark, marginBottom: 10 }} />
+
+              {/* TARIFS — 1..N prix ordonnés (ADR 006) */}
+              <div style={{ marginBottom: 10 }}>
+                {platForm.tarifs.map((t, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.gray, minWidth: 44 }}>Prix {idx + 1}</div>
+                    <input type="number" value={t.prix} onChange={e => setTarifPrix(idx, e.target.value)}
+                      placeholder={idx === 0 ? 'Prix (FCFA) *' : 'Prix (FCFA)'}
+                      style={{ flex: 1, padding: '11px 14px', borderRadius: 13, border: `1.5px solid ${C.border}`, fontSize: 13, outline: 'none', fontFamily: 'inherit', color: C.dark }} />
+                    {idx > 0 && (
+                      <button onClick={() => removeTarif(idx)}
+                        style={{ background: '#FFEBEE', border: 'none', borderRadius: 9, width: 38, height: 38, cursor: 'pointer', fontSize: 15, color: C.red, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🗑️</button>
+                    )}
+                  </div>
+                ))}
+                <button className="btn" onClick={addTarif}
+                  style={{ background: C.primaryLight, border: `1.5px dashed ${C.primary}55`, borderRadius: 11, padding: '9px', width: '100%', fontSize: 12, fontWeight: 700, color: C.primary, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  + Ajouter un prix
+                </button>
+              </div>
+
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: C.grayLight, borderRadius: 13 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>Disponible à la commande</span>
                 <button onClick={() => setPlatForm(p => ({ ...p, disponible: !p.disponible }))}
