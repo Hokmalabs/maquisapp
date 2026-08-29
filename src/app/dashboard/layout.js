@@ -30,6 +30,14 @@ const NAV_ITEMS = [
   { icon: '⚙️', label: 'Réglages', path: '/dashboard/parametres' },
 ]
 
+const NAV_MOBILE = [
+  { icon: '🏠', label: 'Accueil', path: '/dashboard' },
+  { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
+  { icon: '🍛', label: 'Menu', path: '/dashboard/menu' },
+  { icon: '🪑', label: 'Tables', path: '/dashboard/tables' },
+  { icon: '⚙️', label: 'Réglages', path: '/dashboard/parametres' },
+]
+
 export default function DashboardLayout({ children }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -135,6 +143,20 @@ export default function DashboardLayout({ children }) {
             <div style={{ fontSize: 13, color: C.gray, marginTop: 2 }}>{mounted ? dateStr : ''}</div>
           </div>
           {children}
+
+          <div className="dsk-bottomnav-shared" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: '#FFFFFF', borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
+            {NAV_MOBILE.map(item => {
+              const active = item.path === '/dashboard' ? pathname === '/dashboard' : (pathname === item.path || pathname?.startsWith(item.path + '/'))
+              return (
+                <button key={item.path} onClick={() => router.push(item.path)}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 0 6px', background: 'none', border: 'none', cursor: 'pointer', color: active ? C.primary : C.gray, fontSize: 9, fontWeight: active ? 700 : 400, fontFamily: 'inherit', position: 'relative' }}>
+                  {active && <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 20, height: 3, background: C.primary, borderRadius: '0 0 3px 3px' }}></div>}
+                  <span style={{ fontSize: 20 }}>{item.icon}</span>
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         <style>{`
@@ -143,6 +165,7 @@ export default function DashboardLayout({ children }) {
           .dsk-topbar { display: none; }
 
           @media (min-width: 900px) {
+            .dsk-bottomnav-shared { display: none !important; }
             .dsk-topbar {
               display: block;
               padding: 22px 28px 16px;

@@ -338,24 +338,6 @@ export default function StockPage() {
         )}
       </div>
 
-      {/* BOTTOM NAV */}
-      <div className="pg-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100 }}>
-        {[
-          { icon: '🏠', label: 'Accueil', path: '/dashboard' },
-          { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
-          { icon: '🍛', label: 'Menu', path: '/dashboard/menu' },
-          { icon: '🥤', label: 'Stock', path: '/dashboard/stock', active: true },
-          { icon: '⚙️', label: 'Réglages', path: '/dashboard/parametres' },
-        ].map(item => (
-          <button key={item.path} onClick={() => router.push(item.path)}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 0 6px', background: 'none', border: 'none', cursor: 'pointer', color: item.active ? C.primary : C.gray, fontSize: 9, fontWeight: item.active ? 700 : 400, fontFamily: 'inherit', position: 'relative' }}>
-            {item.active && <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 20, height: 3, background: C.primary, borderRadius: '0 0 3px 3px' }}></div>}
-            <span style={{ fontSize: 20 }}>{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
-      </div>
-
       {/* MODAL PIN ADMIN */}
       {showPinModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px', animation: 'fadeIn .2s' }} onClick={closePinModal}>

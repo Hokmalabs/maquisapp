@@ -615,24 +615,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── BOTTOM NAV ───────────────────────────────────────────────── */}
-      <div className="dash-bottomnav" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: C.white, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        {[
-          { icon: '🏠', label: 'Accueil', path: '/dashboard', active: true },
-          { icon: '📋', label: 'Commandes', path: '/dashboard/commandes' },
-          { icon: '🍛', label: 'Menu', path: '/dashboard/menu' },
-          { icon: '🪑', label: 'Tables', path: '/dashboard/tables' },
-          { icon: '⚙️', label: 'Réglages', path: '/dashboard/parametres' },
-        ].map(item => (
-          <button key={item.path} className="nav-btn" onClick={() => router.push(item.path)}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 0 6px', background: 'none', border: 'none', cursor: 'pointer', color: item.active ? C.primary : C.gray, fontSize: 9, fontWeight: item.active ? 700 : 400, fontFamily: 'inherit', transition: 'transform .15s', position: 'relative' }}>
-            {item.active && <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 20, height: 3, background: C.primary, borderRadius: '0 0 3px 3px' }}></div>}
-            <span style={{ fontSize: 20 }}>{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
-      </div>
-
       {/* ── MODAL COMMANDE MANUELLE ──────────────────────────────────── */}
       {showCmdManuelle && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn .2s' }}>
