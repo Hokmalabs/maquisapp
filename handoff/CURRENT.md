@@ -1,48 +1,70 @@
 # MaquisApp — État courant du chantier
 _Dernière mise à jour : 29 août 2026_
 
-## Chantier en cours : Refonte desktop responsive (Volet A)
+## Dernier chantier terminé : Volet B — tarifs multiples par table (ADR 006)
 
-### Principe directeur (vaut sur tout le chantier)
-- Bascule à **900px**. Mobile **strictement intact** (surcouche desktop additive, jamais de modif des valeurs mobiles).
-- Desktop en CSS `@media (min-width: 900px)`.
-- **Règle SSR** : toute date/valeur affichée dépendant de l'heure ou du navigateur est rendue vide au premier paint, puis peuplée en `useEffect` (flag `mounted`). Un `new Date()` au render diverge serveur/client → mismatch d'hydration.
-- **Règle contexte** : une page dashboard ne rappelle JAMAIS `supabase.auth.getUser()`. Tout (resto, restaurantId, userId) vient de `useRestaurant()`. Deux `getUser()` en parallèle = conflit de verrou sur le token auth ("Lock ... was released because another request stole it").
-- Discipline : une page = un prompt = un test (mobile d'abord, desktop ensuite) = un commit. Jamais de migration groupée.
+Terminé et committé sur `develop` (5 commits front + 1 commit db/docs). **Non
+mergé sur `main`.** Détail complet dans `handoff/CHANGELOG.md`.
 
-### FAIT et commité (branche develop)
-1. **RestaurantContext** dans `dashboard/layout.js` : charge le resto une fois, expose `restaurant`, `restaurantId`, `userId`, `loading`, `refresh()` via `useRestaurant()`. Sidebar + topbar desktop. Flag `mounted` anti-hydration.
-2. **Accueil desktop** (`dashboard/page.js`) : sidebar, topbar, GrapheVentes 7j (Recharts, dynamic import ssr:false), CA du jour dérivé de commande_items (ADR 004). NB : l'accueil garde son propre chargement (charge bien plus que le resto) — non migré vers le contexte, redondance temporaire assumée.
-3. **7 pages migrées** vers contexte + desktop responsive : parametres, stock, tables, historique, menu, commandes. Chacune : contexte, header mobile masqué desktop, contenu élargi, `@import` Google Fonts (bloqué CSP) supprimé.
-4. **Bottom-nav centralisée** dans `layout.js` (mobile only, item actif déduit du pathname). Les 7 bottom-nav locales retirées.
+Principe : un article = 1 stock unique + 1..N tarifs ordonnés (Prix 1, 2…). Le
+prix appliqué est déterminé par `tables.tarif_ordre` (repli sur Prix 1). Le prix
+n'est jamais saisi à la commande. `commande_items.prix_unitaire` reste la source
+de vérité (ADR 004). Cohérent de bout en bout : CRUD menu, réglage table,
+commande manuelle, menu public QR.
 
-### Spécificités par page (à connaître avant de retoucher)
-- **stock** : mode admin PIN (verify-admin-pin) préservé. `userId` vient du contexte. ⚠️ verify-admin-pin fait confiance à un userId fourni par le client → risque sécurité connu (P2/P3), NON traité ici.
-- **historique** : toute la dérivation commande_items / grouperSessions par cloture_id (ADR 004) intouchée. Deux colonnes desktop.
-- **menu** : grille plats 2 colonnes desktop (pas 3 — les cards horizontales se tassaient à 3). Upload Storage intouché. Card verticale façon maquette = polish futur, pas fait.
-- **commandes** : Realtime, clôture (cloturerTout + cloture_id), RPC statut table, ticket, bon cuisine — tout intouché. Grille 2 colonnes desktop (pas le kanban de la maquette = polish futur).
+### FAIT et committé (branche develop)
+- Migration `20260829_add_plat_tarifs.sql` (additive, appliquée via Studio) :
+  `plat_tarifs`, `tables.tarif_ordre`, `commande_items.tarif_id`. Backfill vérifié
+  (373 plats → 373 tarifs ordre 1, 0 écart).
+- ADR `docs/adr/006-tarifs-multiples-par-table.md` (Accepted).
+- `dashboard/menu/page.js` : CRUD multi-tarif (bouton +prix, upsert par ordre).
+- `dashboard/tables/page.js` : sélecteur niveau de prix (conditionnel multi-tarif).
+- `dashboard/page.js` : commande manuelle, prix résolu par table + tarif_id.
+- `menu/[slug]/[tableId]/page.js` : prix par table côté client + calculerVraiTotal
+  corrigé (dérive de commande_items.prix_unitaire, plus de plats(prix)).
+
+### Effet de bord positif
+Le stock redevient unique par article → le bug de stock boisson dupliqué
+disparaît par construction (article multi-prix = 1 ligne plats + N tarifs).
+
+## Chantier précédent (déjà fait, rappel) : Volet A — desktop responsive
+7 pages dashboard migrées vers RestaurantContext + surcouche desktop @900px,
+bottom-nav centralisée. Voir CHANGELOG. **Bug P1 hydration post-login toujours
+ouvert** (voir Tickets ci-dessous).
 
 ## Tickets ouverts
 
-### P1 — Bug hydration au premier chargement post-login (À CORRIGER AVANT PROD)
-Après connexion, le premier rendu du dashboard affiche un état hybride cassé : sidebar desktop OK mais contenu accueil en mode mobile (header sombre, colonne étroite). Un Ctrl+Shift+R corrige. C'est un mismatch d'hydration au premier paint post-redirection login→dashboard. **Contournement actuel = hard refresh, ce n'est PAS une correction.** Le client en prod le subira.
-→ Piste : lire l'erreur console EXACTE sur l'écran cassé ("Text content does not match server-rendered HTML") AVANT tout fix. Ne pas fixer à l'aveugle.
+### P1 — Bug hydration au premier chargement post-login (BLOQUANT PROD)
+Après connexion, premier rendu du dashboard en état hybride cassé (sidebar
+desktop OK mais contenu accueil en mode mobile). Un Ctrl+Shift+R corrige.
+Contournement = hard refresh, PAS une correction. Le client en prod le subira.
+→ Piste : lire l'erreur console EXACTE sur l'écran cassé ("Text content does not
+match server-rendered HTML") AVANT tout fix. Ne pas fixer à l'aveugle.
 
-### Auth desktop (Étape 3) — REPORTÉ, confusion à élucider d'abord
-`auth/login/page.js` et `auth/register/page.js` sont de simples redirections vers `/auth?mode=login|register`. Le vrai écran est `auth/page.js`. MAIS : le contenu de `auth/page.js` (login/signup, phone/otp) ne correspond PAS aux maquettes montrant un stepper 4 étapes (Téléphone→SMS→Informations→PIN) + champ PIN + "PIN oublié ?".
-→ Avant toute migration auth : lancer `grep -rl "Code PIN" src/app` pour identifier le VRAI fichier qui affiche le stepper+PIN. Ne pas régénérer auth/page.js (une tentative a déjà supprimé de la logique par erreur — annulée via git checkout).
-→ Image de fond souhaitée sur le hero desktop (façon maquette) : nécessite un fichier réel dans /public (pas d'URL externe, CSP + egress).
+### Refonte desktop du menu public QR — À FAIRE
+`menu/[slug]/[tableId]/page.js` n'a jamais eu sa refonte desktop responsive.
+Reste en `maxWidth: 430` mobile. Le multi-tarif y est branché (logique OK), mais
+le layout desktop de la maquette (grille cards + panier latéral) reste à faire.
+Priorité modérée : le menu public est scanné au téléphone à ~99 %.
+
+### Auth desktop (Étape 3 Volet A) — REPORTÉ
+Voir historique CURRENT précédent. `auth/page.js` porte le vrai stepper login/PIN ;
+ne pas régénérer à l'aveugle (grep "Code PIN" pour trouver le bon fichier).
 
 ### Dette non bloquante
-- Règles CSS orphelines `.pg-bottomnav { display:none }` dans les 7 pages (plus matchées, inoffensives) — à balayer lors de la propagation theme.js.
-- `theme.js` créé mais chaque page a encore son objet `C` local — propager (design system).
-- Double chargement profil : layout + accueil chargent le resto séparément — dédupliquer l'accueil vers le contexte plus tard.
-- `@import` Google Fonts encore présent sur les pages HORS dashboard (admin, abonnement, cuisine, menu public, legal, not-found).
-- `git stash@{0}` (flèches volet A abandonnées) à drop après validation.
-- Next 14.2.35 signalé outdated (upgrade 14→15 à planifier).
+- Doublons multi-prix des AUTRES restos (Beaufort/Bock/Castel de l'échantillon) :
+  à fusionner au cas par cas. Procédure manuelle, hors Volet B.
+- Double-décrément stock : 2 triggers sur `commandes` (`decrementer_stock_insert`
+  + `decrementer_stock_boisson`). Le second retape sur transition valide→servi.
+  Non corrigé, indépendant du multi-tarif.
+- `theme.js` créé mais chaque page a encore son objet `C` local — à propager.
+- `@import` Google Fonts encore présent sur pages hors dashboard (dont menu public).
+- Next 14.2.35 outdated (upgrade 14→15 à planifier).
 
-## Reste à faire sur Volet A avant merge main
-1. **Validation preview complète** sur le vrai PC client (Vercel preview de develop) : parcourir les 7 pages en desktop, vérifier navigation sans retour au mode mobile.
-2. **Corriger le bug P1** (hydration post-login) — bloquant pour la prod.
-3. **Auth desktop** (après élucidation fichier).
-4. **Merge develop → main** (fast-forward) — emporte aussi le chantier retours terrain précédent (rapport articles, historique fiabilisé, cloture_id) qui attend son merge.
+## Reste à faire avant merge main
+1. **Corriger le bug P1** (hydration post-login) — bloquant prod.
+2. Validation preview complète sur le vrai PC client (Vercel preview de develop) :
+   parcourir dashboard desktop + tester multi-tarif bout en bout.
+3. **Merge develop → main** (fast-forward). ⚠️ Le merge emporte un GROS lot :
+   Volet A (desktop responsive), chantier retours terrain, ET Volet B. Tester
+   la preview en entier avant le fast-forward. Ne pas merger à l'aveugle.

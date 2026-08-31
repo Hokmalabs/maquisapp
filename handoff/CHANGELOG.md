@@ -1,3 +1,67 @@
+## Session — Volet B : tarifs multiples par article, appliqués via la table (ADR 006)
+
+Objectif : un article = un stock unique + 1..N tarifs ordonnés (Prix 1, 2…), le
+prix appliqué étant déterminé par la table (`tables.tarif_ordre`), avec repli sur
+Prix 1. Résout la duplication de lignes `plats` pour gérer plusieurs prix et le
+stock éclaté qui en découlait.
+
+### Décisions (ADR 006, Accepted 2026-08-29)
+- Tarifs **ordinaux sans libellé** (Prix 1, 2…), ordre stable et signifiant par
+  restaurant (invariant central : l'ordre N désigne le même niveau sur tous les
+  plats d'un resto).
+- Le prix n'est **jamais saisi à la commande** : il est sélectionné parmi des
+  tarifs pré-enregistrés → non manipulable. `commande_items.prix_unitaire` reste
+  la source de vérité (ADR 004), dérivée du tarif appliqué.
+- **Repli** : si un plat n'a pas le tarif d'ordre demandé, il retombe sur Prix 1.
+  Un plat mono-prix coûte donc pareil partout.
+- **Accompagnements abandonnés** : besoin cuisine couvert par `commande_items.note`
+  (existant). Un accompagnement payant = un article du menu normal.
+- Lien table→tarif **manuel et non obligatoire** : `tarif_ordre` défaut 1, le
+  sélecteur n'apparaît que si le resto a réellement plus d'un tarif.
+
+### Migration (additive, appliquée via Studio — Docker indispo)
+`supabase/migrations/20260829_add_plat_tarifs.sql` :
+- Table `plat_tarifs` (id, plat_id FK CASCADE, prix, ordre, actif ;
+  UNIQUE(plat_id, ordre)).
+- `tables.tarif_ordre int NOT NULL DEFAULT 1`.
+- `commande_items.tarif_id uuid NULL` FK `plat_tarifs` ON DELETE SET NULL
+  (supprimer un tarif ne casse pas l'historique).
+- Backfill : 1 tarif ordre=1 par plat depuis `plats.prix`. Vérifs post-migration :
+  373 plats → 373 tarifs ordre=1, 0 écart de prix, 0 table < tarif_ordre 1.
+- RLS `plat_tarifs` calquée sur le pattern réel de `plats` (SELECT public,
+  écriture par restaurant proprio via plat_id→plats.restaurant_id).
+- `plats.prix` conservé en legacy/fallback (comme `commandes.total`).
+
+### Front (5 commits, un par fichier)
+- **menu** (`dashboard/menu/page.js`) : CRUD multi-tarif. Champ « Prix 1 » +
+  bouton « + Ajouter un prix », upsert `plat_tarifs` par (plat_id, ordre) —
+  conserve les id des tarifs gardés (historique préservé), supprime les ordres
+  retirés. Card : « À partir de {min} » + badge « N prix » si multi, prix sec
+  sinon. Multi-tarif autorisé sur les boissons (stock unique).
+- **tables** (`dashboard/tables/page.js`) : sélecteur « Niveau de prix » visible
+  seulement si `maxTarif > 1` (mono-prix = modale inchangée). Badge « Prix N » sur
+  la card si tarif_ordre > 1.
+- **commande manuelle** (`dashboard/page.js`) : `resoudreTarif` selon la table
+  choisie, prix résolu affiché (pas de sélecteur, pas de « à partir de »), écrit
+  `tarif_id`. Total minimal inchangé (prix panier déjà résolus).
+- **menu public QR** (`menu/[slug]/[tableId]/page.js`) : prix résolu selon
+  `table.tarif_ordre` de la table scannée. Correction dette ADR 004 :
+  `calculerVraiTotal` dérive désormais de `commande_items.prix_unitaire` (snapshot),
+  plus de jointure `plats(prix)`. **Refonte desktop NON faite** (chantier à part).
+
+### Effet de bord positif
+Le stock redevient **unique par article** : le bug de stock boisson dupliqué
+disparaît par construction dès qu'on modélise un article multi-prix comme une
+seule ligne `plats` + N tarifs (au lieu de N lignes `plats`).
+
+### Hors périmètre / à suivre
+- **Refonte desktop menu public** (maquette grille cards + panier latéral) — à faire.
+- **Volet C** : card-plat commande manuelle desktop, consomme le schéma en place.
+- **Fusion des doublons multi-prix des AUTRES restos** (Beaufort/Bock/Castel de
+  l'échantillon) : procédure manuelle au cas par cas, non traitée.
+- **Double-décrément stock** (2 triggers sur `commandes`) : indépendant, non corrigé
+  ici. Rappel : `decrementer_stock_boisson` retape sur transition valide→servi.
+
 ## Session du 29 août 2026 — Refonte desktop dashboard (Volet A, Étape 4)
 
 - feat(dashboard): accueil desktop responsive (sidebar, topbar, graphe ventes 7j, CA dérivé commande_items) [22ea15e]
