@@ -57,6 +57,7 @@ export default function DashboardPage() {
   const [activeCat, setActiveCat] = useState(null)
   const [cmdStep, setCmdStep] = useState('table')
   const [sendingCmd, setSendingCmd] = useState(false)
+  const [rechercheePlat, setRecherchePlat] = useState('') // Volet C : filtre plat (desktop)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showInstallBtn, setShowInstallBtn] = useState(false)
   const [isIOS, setIsIOS] = useState(false)
@@ -314,6 +315,19 @@ export default function DashboardPage() {
     return { prix: Number(chosen.prix), tarif_id: chosen.id }
   }
 
+  // Volet C — Badge « Prix N » contextuel (ADR 006).
+  // N'affiche un badge QUE si l'article a plusieurs tarifs actifs ET que le tarif
+  // appliqué pour la table courante n'est pas l'ordre 1 (Prix 1 = défaut implicite,
+  // même règle que la card tables/page.js). Retourne l'ordre appliqué, ou null.
+  const badgeTarifOrdre = (plat) => {
+    const list = (tarifsByPlat[plat.id] || []).filter(t => t.actif)
+    if (list.length <= 1) return null
+    const ordreCible = selectedTable?.tarif_ordre || 1
+    const exact = list.find(t => t.ordre === ordreCible)
+    const ordreApplique = exact ? exact.ordre : 1
+    return ordreApplique > 1 ? ordreApplique : null
+  }
+
   const totalPanier = panier.reduce((s, i) => s + i.prix * i.quantite, 0)
   const countPanier = panier.reduce((s, i) => s + i.quantite, 0)
 
@@ -332,7 +346,7 @@ export default function DashboardPage() {
     setPanier(prev => {
       const ex = prev.find(i => i.plat_id === plat.id)
       if (ex) return prev.map(i => i.plat_id === plat.id ? { ...i, quantite: i.quantite + 1 } : i)
-      return [...prev, { plat_id: plat.id, nom: plat.nom, prix, tarif_id, quantite: 1 }]
+      return [...prev, { plat_id: plat.id, nom: plat.nom, prix, tarif_id, quantite: 1, image_url: plat.image_url || null }]
     })
   }
 
@@ -343,6 +357,10 @@ export default function DashboardPage() {
       if (ex.quantite === 1) return prev.filter(i => i.plat_id !== platId)
       return prev.map(i => i.plat_id === platId ? { ...i, quantite: i.quantite - 1 } : i)
     })
+  }
+
+  const supprimerLignePanier = (platId) => {
+    setPanier(prev => prev.filter(i => i.plat_id !== platId))
   }
 
   const qte = (platId) => panier.find(i => i.plat_id === platId)?.quantite || 0
@@ -363,6 +381,7 @@ export default function DashboardPage() {
     setPanier([])
     setSelectedTable(null)
     setCmdStep('table')
+    setRecherchePlat('')
     refreshCommandes(restaurant.id)
   }
 
@@ -371,7 +390,16 @@ export default function DashboardPage() {
     setPanier([])
     setSelectedTable(null)
     setCmdStep('table')
+    setRecherchePlat('')
   }
+
+  // Volet C — plats filtrés (catégorie active + recherche). Utilisé par la vue desktop.
+  const platsFiltres = plats.filter(p => {
+    if (rechercheePlat.trim()) {
+      return p.nom.toLowerCase().includes(rechercheePlat.trim().toLowerCase())
+    }
+    return p.categorie_id === activeCat
+  })
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'DM Sans', system-ui" }}>
@@ -393,6 +421,7 @@ export default function DashboardPage() {
         .nav-btn:active { transform: scale(0.93); }
         .card-btn:active { transform: scale(0.97); }
         .dash-desktop-row { display: none; }
+        .cmdc-desktop { display: none; }
 
         @media (min-width: 900px) {
           .dash-root { max-width: 1180px !important; margin: 0 !important; padding: 24px 28px 40px !important; }
@@ -403,6 +432,124 @@ export default function DashboardPage() {
           .dash-stat-ca { grid-column: span 1 !important; }
           .dash-desktop-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin: 16px 16px 0; }
           .dash-panel { background: #fff; border-radius: 18px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,.09); }
+
+          /* ── Volet C — vue commande manuelle desktop (grille + panier) ── */
+          /* Le modal mobile est masqué en desktop ; cette surcouche prend le relais. */
+          .cmdc-modal-mobile { display: none !important; }
+          .cmdc-desktop {
+            display: flex;
+            position: fixed;
+            inset: 0;
+            left: 230px; /* largeur sidebar layout */
+            z-index: 300;
+            background: ${C.bg};
+            flex-direction: column;
+            animation: fadeIn .18s ease;
+          }
+          .cmdc-desktop-head {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 20px 28px 14px;
+            border-bottom: 1px solid ${C.border};
+            background: #fff;
+            flex-shrink: 0;
+          }
+          .cmdc-desktop-body {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 0;
+            flex: 1;
+            min-height: 0;
+          }
+          .cmdc-menu-col {
+            overflow-y: auto;
+            padding: 18px 24px 30px;
+            min-width: 0;
+          }
+          .cmdc-cart-col {
+            border-left: 1px solid ${C.border};
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+          }
+          .cmdc-search {
+            width: 100%;
+            border: 1.5px solid ${C.border};
+            border-radius: 12px;
+            padding: 11px 14px;
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            margin-bottom: 14px;
+          }
+          .cmdc-search:focus { border-color: ${C.primary}; }
+          .cmdc-cats { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 16px; flex-wrap: wrap; }
+          .cmdc-cat {
+            flex-shrink: 0; padding: 7px 16px; border-radius: 50px;
+            font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+            white-space: nowrap; transition: all .15s;
+          }
+          .cmdc-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+          }
+          .cmdc-card {
+            background: #fff; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,.06);
+            border: 2px solid transparent;
+            transition: border-color .15s, box-shadow .15s;
+            display: flex; flex-direction: column;
+          }
+          .cmdc-card--active { border-color: ${C.primary}; box-shadow: 0 4px 16px rgba(139,26,39,.18); }
+          .cmdc-card-img { width: 100%; height: 130px; object-fit: cover; display: block; }
+          .cmdc-card-imgph {
+            width: 100%; height: 130px; background: ${C.primaryLight};
+            display: flex; align-items: center; justify-content: center; font-size: 40px;
+          }
+          .cmdc-card-body { padding: 12px 13px 13px; display: flex; flex-direction: column; flex: 1; }
+          .cmdc-card-nom { font-size: 14px; font-weight: 700; color: ${C.dark}; line-height: 1.25; }
+          .cmdc-card-meta { font-size: 11px; color: ${C.gray}; margin-top: 2px; }
+          .cmdc-card-prixrow { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+          .cmdc-card-prix { font-size: 14px; font-weight: 800; color: ${C.primary}; }
+          .cmdc-card-badge {
+            font-size: 10px; font-weight: 700; color: ${C.primary};
+            background: ${C.primaryLight}; border-radius: 20px; padding: 2px 9px;
+          }
+          .cmdc-card-controls {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-top: 12px; gap: 8px;
+          }
+          .cmdc-qtybtn {
+            width: 36px; height: 36px; border-radius: 10px; border: 1.5px solid ${C.border};
+            background: #fff; cursor: pointer; font-size: 20px; font-weight: 600;
+            display: flex; align-items: center; justify-content: center; color: ${C.dark};
+            flex-shrink: 0; transition: all .12s;
+          }
+          .cmdc-qtybtn:hover { border-color: ${C.primary}; }
+          .cmdc-qtybtn--add { background: ${C.primary}; border-color: ${C.primary}; color: #fff; }
+          .cmdc-qtybtn--add:hover { background: #7A1620; }
+          .cmdc-qtyval { font-size: 16px; font-weight: 800; color: ${C.dark}; flex: 1; text-align: center; }
+
+          .cmdc-cart-head { padding: 20px 20px 14px; border-bottom: 1px solid ${C.border}; flex-shrink: 0; }
+          .cmdc-cart-items { flex: 1; overflow-y: auto; padding: 8px 20px; min-height: 0; }
+          .cmdc-cart-empty {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100%; text-align: center; color: ${C.gray}; gap: 14px; padding: 20px;
+          }
+          .cmdc-cart-line {
+            display: flex; align-items: center; gap: 11px;
+            padding: 11px 0; border-bottom: 1px solid ${C.border};
+          }
+          .cmdc-cart-foot { padding: 16px 20px 20px; border-top: 1px solid ${C.border}; flex-shrink: 0; }
+          .cmdc-validate {
+            width: 100%; background: ${C.primary}; border: none; border-radius: 14px;
+            padding: 15px; font-size: 15px; font-weight: 800; color: #fff;
+            cursor: pointer; font-family: inherit; transition: background .15s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+          }
+          .cmdc-validate:hover { background: #7A1620; }
+          .cmdc-validate:disabled { opacity: .6; cursor: not-allowed; }
         }
       `}</style>
 
@@ -645,9 +792,175 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── MODAL COMMANDE MANUELLE ──────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* ── VOLET C — COMMANDE MANUELLE DESKTOP (grille + panier) ─────── */}
+      {/* Masqué sous 900px (CSS). En desktop, cette surcouche remplace le  */}
+      {/* modal mobile ci-dessous. Étape table réutilisée, puis grille.    */}
+      {/* ══════════════════════════════════════════════════════════════ */}
       {showCmdManuelle && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn .2s' }}>
+        <div className="cmdc-desktop">
+          {/* En-tête */}
+          <div className="cmdc-desktop-head">
+            <div>
+              <div style={{ fontSize: 12, color: C.gray, fontWeight: 600 }}>Commandes / Nouvelle commande</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: C.dark, marginTop: 2 }}>
+                {cmdStep === 'table' ? 'Choisir une table' : 'Nouvelle commande'}
+              </div>
+              {cmdStep !== 'table' && selectedTable && (
+                <div style={{ fontSize: 13, color: C.gray, marginTop: 2 }}>Table {selectedTable.numero} • {selectedTable.zone || 'Salle'}</div>
+              )}
+            </div>
+            <button onClick={resetCmdManuelle}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, background: C.grayLight, border: 'none', borderRadius: 10, padding: '9px 16px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: C.dark }}>
+              ✕ Annuler
+            </button>
+          </div>
+
+          {/* Étape 1 : table */}
+          {cmdStep === 'table' && (
+            <div style={{ overflowY: 'auto', padding: '24px 28px 40px' }}>
+              <div style={{ fontSize: 14, color: C.gray, marginBottom: 18 }}>Sélectionnez la table pour cette commande</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14, maxWidth: 760 }}>
+                {tables.map(t => (
+                  <button key={t.id} onClick={() => { setSelectedTable(t); setCmdStep('menu') }}
+                    style={{ background: t.statut === 'occupee' ? '#FFF0EB' : C.white, border: `2px solid ${t.statut === 'occupee' ? C.primary : C.border}`, borderRadius: 16, padding: '20px 12px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s', textAlign: 'center' }}>
+                    <div style={{ fontSize: 26, marginBottom: 6 }}>{t.statut === 'occupee' ? '🔴' : '🟢'}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Table {t.numero}</div>
+                    <div style={{ fontSize: 11, color: C.gray, marginTop: 3 }}>{t.zone || 'Salle'}</div>
+                    {t.tarif_ordre > 1 && <div style={{ fontSize: 10, color: C.primary, marginTop: 5, fontWeight: 700, background: C.primaryLight, borderRadius: 20, padding: '2px 9px', display: 'inline-block' }}>Prix {t.tarif_ordre}</div>}
+                    {t.statut === 'occupee' && <div style={{ fontSize: 10, color: C.primary, marginTop: 5, fontWeight: 600 }}>Occupée</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Étape 2 : grille plats + panier latéral */}
+          {cmdStep !== 'table' && (
+            <div className="cmdc-desktop-body">
+              {/* Colonne menu */}
+              <div className="cmdc-menu-col">
+                <input
+                  className="cmdc-search"
+                  type="text"
+                  placeholder="Rechercher un plat..."
+                  value={rechercheePlat}
+                  onChange={e => setRecherchePlat(e.target.value)}
+                />
+                {!rechercheePlat.trim() && (
+                  <div className="cmdc-cats">
+                    {categories.map(cat => (
+                      <button key={cat.id} onClick={() => setActiveCat(cat.id)}
+                        className="cmdc-cat"
+                        style={{ border: activeCat === cat.id ? 'none' : `1.5px solid ${C.border}`, background: activeCat === cat.id ? C.primary : C.white, color: activeCat === cat.id ? '#fff' : C.dark }}>
+                        {cat.nom}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {platsFiltres.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: C.gray, padding: '50px 20px', fontSize: 14 }}>
+                    Aucun plat {rechercheePlat.trim() ? 'ne correspond à cette recherche' : 'dans cette catégorie'}.
+                  </div>
+                ) : (
+                  <div className="cmdc-grid">
+                    {platsFiltres.map(plat => {
+                      const { prix: prixAffiche } = resoudreTarif(plat)
+                      const ordreBadge = badgeTarifOrdre(plat)
+                      const q = qte(plat.id)
+                      return (
+                        <div key={plat.id} className={`cmdc-card${q > 0 ? ' cmdc-card--active' : ''}`}>
+                          {plat.image_url
+                            ? <img src={plat.image_url} alt="" className="cmdc-card-img" />
+                            : <div className="cmdc-card-imgph">🍽️</div>
+                          }
+                          <div className="cmdc-card-body">
+                            <div className="cmdc-card-nom">{plat.nom}</div>
+                            {plat.est_boisson && <div className="cmdc-card-meta">🥤 Boisson</div>}
+                            <div className="cmdc-card-prixrow">
+                              <span className="cmdc-card-prix">{prixAffiche.toLocaleString()} F</span>
+                              {ordreBadge && <span className="cmdc-card-badge">Prix {ordreBadge}</span>}
+                            </div>
+                            <div className="cmdc-card-controls">
+                              <button className="cmdc-qtybtn" onClick={() => retirerPlat(plat.id)} disabled={q === 0} style={{ opacity: q === 0 ? .4 : 1, cursor: q === 0 ? 'default' : 'pointer' }}>−</button>
+                              <span className="cmdc-qtyval">{q}</span>
+                              <button className="cmdc-qtybtn cmdc-qtybtn--add" onClick={() => ajouterPlat(plat)}>+</button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Colonne panier */}
+              <div className="cmdc-cart-col">
+                <div className="cmdc-cart-head">
+                  <div style={{ fontSize: 17, fontWeight: 800, color: C.dark, marginBottom: 10 }}>Commande en cours</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: C.primaryLight, borderRadius: 10, padding: '7px 12px' }}>
+                      <span style={{ fontSize: 15 }}>🪑</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>Table {selectedTable?.numero} • {selectedTable?.zone || 'Salle'}</span>
+                    </div>
+                    <button onClick={() => { setCmdStep('table'); setRecherchePlat('') }}
+                      style={{ background: 'none', border: 'none', color: C.primary, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}>
+                      changer
+                    </button>
+                  </div>
+                </div>
+
+                <div className="cmdc-cart-items">
+                  {panier.length === 0 ? (
+                    <div className="cmdc-cart-empty">
+                      <div style={{ width: 70, height: 70, borderRadius: '50%', background: C.grayLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>🍽️</div>
+                      <div style={{ fontSize: 13 }}>Ajoutez des plats à cette commande.</div>
+                    </div>
+                  ) : (
+                    panier.map(item => (
+                      <div key={item.plat_id} className="cmdc-cart-line">
+                        {item.image_url
+                          ? <img src={item.image_url} alt="" style={{ width: 46, height: 46, borderRadius: 9, objectFit: 'cover', flexShrink: 0 }} />
+                          : <div style={{ width: 46, height: 46, borderRadius: 9, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🍽️</div>
+                        }
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nom}</div>
+                          <div style={{ fontSize: 12, color: C.primary, fontWeight: 700, marginTop: 2 }}>{(item.prix * item.quantite).toLocaleString()} F</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => retirerPlat(item.plat_id)} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${C.border}`, background: '#fff', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                          <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: 'center' }}>{item.quantite}</span>
+                          <button onClick={() => ajouterPlat({ id: item.plat_id, nom: item.nom, prix: item.prix, image_url: item.image_url })} style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: C.primary, cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>+</button>
+                          <button onClick={() => supprimerLignePanier(item.plat_id)} style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer', fontSize: 15, color: C.red, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🗑</button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="cmdc-cart-foot">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: C.gray, fontWeight: 600 }}>Sous-total</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{totalPanier.toLocaleString()} F</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: C.dark }}>Total</span>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: C.primary }}>{totalPanier.toLocaleString()} F</span>
+                  </div>
+                  <button className="cmdc-validate" onClick={envoyerCmdManuelle} disabled={sendingCmd || panier.length === 0}>
+                    {sendingCmd ? 'Envoi...' : `Valider la commande • ${totalPanier.toLocaleString()} F`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── MODAL COMMANDE MANUELLE (MOBILE) ─────────────────────────── */}
+      {showCmdManuelle && (
+        <div className="cmdc-modal-mobile" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn .2s' }}>
           <div onClick={resetCmdManuelle} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }}></div>
           <div style={{ position: 'relative', background: C.white, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp .3s ease' }}>
 
